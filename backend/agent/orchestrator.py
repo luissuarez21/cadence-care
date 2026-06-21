@@ -31,9 +31,16 @@ try:
 except Exception:  # pragma: no cover - dotenv optional
     pass
 
+from ..eval.arize_judge import agent_span, judge_escalation, setup_tracing
 from ..ingestion.schema import ChatMessage, ProtocolJSON, RiskScore, SymptomLog
 from ..memory import redis_client
 from .tools import TOOL_REGISTRY
+
+# Tracer is initialized lazily on first respond() call so import-time side effects
+# (load_dotenv, OTel global registration) don't fire during test collection.
+# Tests monkeypatch `_TRACER` directly to inject None (no-op).
+_TRACER = None
+_TRACER_INITIALIZED = False
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
@@ -259,7 +266,12 @@ def _to_content(result) -> str:
     return json.dumps(result, default=str)
 
 
-def dispatch_tool(name: str, tool_input: dict, patient_id: str) -> _DispatchOutcome:
+def dispatch_tool(
+    name: str,
+    tool_input: dict,
+    patient_id: str,
+    tracer=None,
+) -> _DispatchOutcome:
     """Inject patient_id, call the registered tool, and package the result for Claude."""
     fn = TOOL_REGISTRY.get(name)
     if fn is None:
@@ -281,16 +293,61 @@ def dispatch_tool(name: str, tool_input: dict, patient_id: str) -> _DispatchOutc
     except Exception as exc:  # surface the error to the model so the turn can recover
         return _DispatchOutcome(content=f"Tool '{name}' failed: {exc}", is_error=True)
 
-    return _DispatchOutcome(
+    flagged = (name == "escalate_to_clinician")
+    outcome = _DispatchOutcome(
         content=_to_content(result),
-        flagged=(name == "escalate_to_clinician"),
+        flagged=flagged,
         risk=result if (name == "assess_risk" and isinstance(result, RiskScore)) else None,
     )
+
+    # Record a de-identified span for every tool call.
+    severity = result.severity if hasattr(result, "severity") else None
+    with agent_span(
+        f"tool.{name}",
+        tracer=tracer,
+        patient_id=patient_id,
+        tool_called=name,
+        is_error=outcome.is_error,
+        **({} if severity is None else {"severity": severity}),
+    ):
+        pass
+
+    # Fire the LLM-as-judge in a background thread after a successful escalation.
+    if flagged:
+        _fire_judge(patient_id, tracer)
+
+    return outcome
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The loop
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _fire_judge(patient_id: str, tracer) -> None:
+    """
+    Fire judge_escalation in a daemon thread after escalate_to_clinician.
+    Loads the most recent escalation + symptom history + plan from Redis.
+    Failures are silently swallowed — the clinical path already succeeded.
+    """
+    import asyncio
+    import threading
+
+    def _run():
+        try:
+            escalations = redis_client.get_escalations(patient_id)
+            if not escalations:
+                return
+            escalation = escalations[-1]
+            symptoms = redis_client.get_symptom_history(patient_id)
+            plan = redis_client.get_plan(patient_id)
+            if plan is None:
+                return
+            asyncio.run(judge_escalation(escalation, symptoms, plan, tracer=tracer))
+        except Exception:
+            return
+
+    threading.Thread(target=_run, daemon=True).start()
+
 
 @dataclass
 class AgentResult:
@@ -305,12 +362,14 @@ def stream_agent(
     system_prompt: str,
     messages: list[dict],
     result: Optional[AgentResult] = None,
+    tracer=None,
 ) -> Iterator[str]:
     """
     Run the multi-round tool-use loop, yielding the assistant's text as it streams.
 
     `messages` is the running Anthropic message list (mutated in place across rounds).
     Pass an AgentResult to capture flagged/risk/text/tool_calls for the JSON endpoint.
+    Each agent turn and tool call is traced to Arize via agent_span (de-identified).
     """
     if result is None:
         result = AgentResult()
@@ -318,17 +377,18 @@ def stream_agent(
     tools = anthropic_tool_schemas()
 
     for _ in range(MAX_TOOL_ROUNDS):
-        with client.messages.stream(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=system_prompt,
-            tools=tools,
-            messages=messages,
-        ) as stream:
-            for chunk in stream.text_stream:
-                result.text += chunk
-                yield chunk
-            final = stream.get_final_message()
+        with agent_span("orchestrator.turn", tracer=tracer, patient_id=patient_id):
+            with client.messages.stream(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=system_prompt,
+                tools=tools,
+                messages=messages,
+            ) as stream:
+                for chunk in stream.text_stream:
+                    result.text += chunk
+                    yield chunk
+                final = stream.get_final_message()
 
         messages.append({"role": "assistant", "content": final.content})
         tool_uses = [b for b in final.content if getattr(b, "type", None) == "tool_use"]
@@ -338,7 +398,7 @@ def stream_agent(
         tool_results = []
         for tu in tool_uses:
             result.tool_calls.append(tu.name)
-            outcome = dispatch_tool(tu.name, dict(tu.input or {}), patient_id)
+            outcome = dispatch_tool(tu.name, dict(tu.input or {}), patient_id, tracer=tracer)
             if outcome.flagged and not outcome.is_error:
                 result.flagged = True
             if outcome.risk is not None:
@@ -374,7 +434,15 @@ def respond(
     messages = [_chat_message_to_anthropic(m) for m in history]
     messages.append({"role": "user", "content": user_message})
 
+    global _TRACER, _TRACER_INITIALIZED
+    if not _TRACER_INITIALIZED:
+        try:
+            _TRACER = setup_tracing(project_name="cadence", required=True)
+        except RuntimeError:
+            _TRACER = None
+        _TRACER_INITIALIZED = True
+
     result = AgentResult()
-    for _ in stream_agent(patient_id, system_prompt, messages, result):
+    for _ in stream_agent(patient_id, system_prompt, messages, result, tracer=_TRACER):
         pass
     return result
