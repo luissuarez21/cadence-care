@@ -157,3 +157,18 @@ def test_ws_pushes_published_escalation(store, monkeypatch):
         import json
         payload = json.loads(ws.receive_text())
         assert payload["escalation_id"] == "esc-live"
+
+
+# ── CAD-47: ack escalation ───────────────────────────────────────────────────
+
+def test_ack_escalation_returns_ok(store, monkeypatch):
+    monkeypatch.setattr(redis_client, "acknowledge_escalation", lambda pid, eid: pid == "maria-chen" and eid == "esc-1")
+    r = _clinician_client().post("/api/clinician/escalations/esc-1/ack")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_ack_escalation_unknown_id_returns_404(store, monkeypatch):
+    monkeypatch.setattr(redis_client, "acknowledge_escalation", lambda pid, eid: False)
+    r = _clinician_client().post("/api/clinician/escalations/nonexistent/ack")
+    assert r.status_code == 404

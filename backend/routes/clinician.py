@@ -17,14 +17,16 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..agent import tools
 from ..auth import Identity, require_clinician
+
 from ..ingestion.api_models import (
     ActionRequest,
     ActionResponse,
     EscalationsResponse,
+    GenericOk,
     PanelResponse,
     PanelRow,
     PatientDetailResponse,
@@ -129,6 +131,19 @@ async def escalations(ident: Identity = Depends(require_clinician)) -> Escalatio
         all_escalations.extend(redis_client.get_escalations(pid))
     all_escalations.sort(key=lambda e: e.timestamp, reverse=True)     # newest first
     return EscalationsResponse(escalations=all_escalations)
+
+
+# ── CAD-47: acknowledge escalation ──────────────────────────────────────────
+
+@router.post("/escalations/{escalation_id}/ack", response_model=GenericOk)
+async def ack_escalation(
+    escalation_id: str,
+    ident: Identity = Depends(require_clinician),
+) -> GenericOk:
+    for pid in _assigned_patient_ids(ident):
+        if redis_client.acknowledge_escalation(pid, escalation_id):
+            return GenericOk(ok=True)
+    raise HTTPException(status_code=404, detail=f"Escalation {escalation_id} not found.")
 
 
 # ── Clinician one-click actions ──────────────────────────────────────────────
