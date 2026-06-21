@@ -115,8 +115,8 @@ def test_dispatch_log_symptom_builds_schema(monkeypatch):
 
 def test_stub_tool_error_is_recoverable():
     """A NotImplementedError stub must come back as a recoverable tool error, not crash."""
-    out = orchestrator.dispatch_tool("assess_risk", {}, "maria-chen")
-    # default registry stub raises NotImplementedError
+    # lookup_plan is still a stub (RAG story); it must fail gracefully, not crash the loop.
+    out = orchestrator.dispatch_tool("lookup_plan", {"query": "aspirin"}, "maria-chen")
     assert out.is_error is True
     assert "not implemented" in out.content.lower()
 
