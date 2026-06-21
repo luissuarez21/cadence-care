@@ -166,9 +166,18 @@ function computeAnalytics(timeline: SymptomLog[]): Analytics {
   return { total, elevated, adherence, headacheDays, bpTrend, calendar };
 }
 
-/* pink-tinted drop shadows */
-const shadow = "0 2px 8px -2px oklch(0.53 0.22 345 / 0.14), 0 1px 3px -1px oklch(0.53 0.22 345 / 0.10)";
-const shadowMd = "0 6px 20px -4px oklch(0.53 0.22 345 / 0.20), 0 2px 6px -2px oklch(0.53 0.22 345 / 0.12)";
+/* purple-tinted drop shadows */
+const shadow = "0 2px 8px -2px oklch(0.52 0.20 305 / 0.14), 0 1px 3px -1px oklch(0.52 0.20 305 / 0.10)";
+const shadowMd = "0 6px 20px -4px oklch(0.52 0.20 305 / 0.20), 0 2px 6px -2px oklch(0.52 0.20 305 / 0.12)";
+
+/* care plan coaching topics from preeclampsia_risk.json */
+const CARE_PLAN_REMINDERS = [
+  "Take low-dose aspirin at the same time daily",
+  "BP: seated, rested, arm at heart level — two readings, 4 hrs apart",
+  "Reduce dietary sodium and stay well hydrated",
+  "Count fetal kicks daily — note any drop from baseline",
+  "Report severe headache + vision changes (spots, blur, flashing) immediately",
+];
 
 const BASE_WS = (import.meta.env.VITE_API_URL as string | undefined)
   ?.replace(/^http/, "ws") ?? "ws://localhost:8000";
@@ -228,8 +237,7 @@ function ClinicianDashboard() {
 
       {view === "panel" ? (
         <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
-          {/* Pink sidebar */}
-          <aside className="bg-sidebar border-r border-border flex flex-col overflow-hidden">
+          <aside className="bg-surface border-r border-border flex flex-col overflow-hidden">
             <PanelHeader rows={rows} />
             <div className="flex-1 overflow-y-auto">
               {panelLoading ? (
@@ -353,10 +361,10 @@ function NavBtn({ children, active, onClick }: {
 function CadenceMark() {
   return (
     <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
-      <circle cx="14" cy="14" r="13" fill="oklch(0.53 0.22 345 / 0.10)" stroke="oklch(0.53 0.22 345 / 0.30)" strokeWidth="1" />
+      <circle cx="14" cy="14" r="13" fill="oklch(0.52 0.20 305 / 0.10)" stroke="oklch(0.52 0.20 305 / 0.30)" strokeWidth="1" />
       <path
         d="M4 16 L9 16 L11 11 L14 20 L17 8 L20 16 L24 16"
-        stroke="oklch(0.53 0.22 345)"
+        stroke="oklch(0.52 0.20 305)"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -370,7 +378,7 @@ function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
   const ini = getInitials(name);
   const cls = size === "sm" ? "w-8 h-8 text-xs" : "w-9 h-9 text-[11px]";
   return (
-    <div className={`${cls} rounded-full bg-primary/15 text-primary border-2 border-primary/25 flex items-center justify-center font-bold shrink-0 select-none font-display`}>
+    <div className={`${cls} rounded-full bg-primary/15 text-primary border-2 border-primary/25 flex items-center justify-center font-semibold shrink-0 select-none`}>
       {ini}
     </div>
   );
@@ -428,7 +436,7 @@ function PatientRow({ row, active, onSelect }: {
         <Avatar name={row.patient_name} size="sm" />
         <div className="flex-1 min-w-0 pt-0.5">
           <div className="flex items-center justify-between gap-2 mb-0.5">
-            <span className="text-sm font-semibold truncate font-display">{row.patient_name}</span>
+            <span className="text-sm font-semibold truncate">{row.patient_name}</span>
             <RiskBadge risk={sev} small />
           </div>
           <div className="text-xs text-muted-foreground truncate leading-snug">{row.headline}</div>
@@ -538,41 +546,53 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
       ) : (
         <div className="p-4 space-y-3">
 
-          {/* ── Row 1: Recommended next steps (FIRST) ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
-            {/* Recommended action — prominent gradient card */}
-            <div
-              className="rounded-2xl border border-primary/20 p-5 bg-gradient-to-br from-primary/10 via-accent/30 to-secondary/40"
-              style={{ boxShadow: shadowMd }}
-            >
-              <CardTitle>✦ Recommended next steps</CardTitle>
-              <p className="text-sm leading-relaxed font-semibold text-foreground mt-1">
-                {detail.current_risk?.recommended_action ?? "No action recorded yet."}
-              </p>
+          {/* ── Row 1: Next steps — compact 3-col ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {/* Immediate action */}
+            <Card className="p-4">
+              <SectionLabel>Immediate action</SectionLabel>
+              {detail.current_risk?.recommended_action ? (
+                <p className="text-sm leading-relaxed">{detail.current_risk.recommended_action}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No specific action recorded.</p>
+              )}
               {detail.current_risk?.triggered_flags && detail.current_risk.triggered_flags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
                   {detail.current_risk.triggered_flags.map((f) => (
-                    <span key={f} className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold border border-primary/20">
+                    <span key={f} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold border border-primary/20">
                       {f}
                     </span>
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
+
+            {/* Care plan reminders */}
+            <Card className="p-4">
+              <SectionLabel>Care plan reminders</SectionLabel>
+              <ul className="space-y-2">
+                {CARE_PLAN_REMINDERS.map((r, i) => (
+                  <li key={i} className="flex gap-2 text-xs leading-relaxed">
+                    <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </Card>
 
             {/* Conversation starters */}
             <Card className="p-4">
-              <CardTitle>Before the visit, ask</CardTitle>
+              <SectionLabel>Before the visit, ask</SectionLabel>
               {starters.length === 0 ? (
-                <p className="text-sm text-muted-foreground mt-1">None yet.</p>
+                <p className="text-sm text-muted-foreground">None generated yet.</p>
               ) : (
-                <ol className="mt-2 space-y-2.5">
+                <ol className="space-y-2">
                   {starters.map((s, i) => (
-                    <li key={i} className="flex gap-2.5 text-sm">
-                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold flex items-center justify-center tabular-nums mt-0.5">
+                    <li key={i} className="flex gap-2 text-xs leading-relaxed">
+                      <span className="shrink-0 w-4 h-4 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center tabular-nums mt-0.5">
                         {i + 1}
                       </span>
-                      <span className="leading-relaxed">{s}</span>
+                      {s}
                     </li>
                   ))}
                 </ol>
@@ -802,7 +822,7 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
                           <Avatar name={e.patient_name} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-display text-base font-semibold">{e.patient_name}</span>
+                              <span className="text-base font-semibold">{e.patient_name}</span>
                               <RiskBadge risk={!e.acknowledged ? "escalate" : sev} small />
                             </div>
                             <div className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">{fmtTime(e.timestamp)}</div>
@@ -854,7 +874,13 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 
 function CardTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="font-display text-sm font-semibold text-foreground mb-0.5">{children}</div>
+    <div className="text-sm font-semibold text-foreground mb-0.5">{children}</div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{children}</div>
   );
 }
 
@@ -880,7 +906,7 @@ function MetricChip({ label, value, highlight }: { label: string; value: string;
   return (
     <div>
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-none mb-1">{label}</div>
-      <div className={`font-display text-base font-semibold tabular-nums ${highlight ? "text-risk-escalate" : "text-foreground"}`}>{value}</div>
+      <div className={`text-base font-semibold tabular-nums ${highlight ? "text-risk-escalate" : "text-foreground"}`}>{value}</div>
     </div>
   );
 }
@@ -895,7 +921,7 @@ function BPTrendChip({ trend }: { trend: "up" | "down" | "stable" }) {
   return (
     <div>
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-none mb-1">BP Trend</div>
-      <div className={`font-display text-sm font-semibold flex items-center gap-1 ${t.color}`}>
+      <div className={`text-sm font-semibold flex items-center gap-1 ${t.color}`}>
         <span>{t.icon}</span>
         <span>{t.label}</span>
       </div>
@@ -911,7 +937,7 @@ function AnalyticCard({ label, value, sub, color, bgColor, ring }: {
       <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{label}</div>
       <div className="flex items-end justify-between gap-2">
         <div>
-          <div className={`font-display text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</div>
+          <div className={`text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</div>
           <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{sub}</div>
         </div>
         {ring !== null && ring !== undefined && (
@@ -930,7 +956,7 @@ function AdherenceRing({ pct, small = false }: { pct: number; small?: boolean })
   const color = pct >= 80 ? "oklch(0.42 0.09 155)" : pct >= 60 ? "oklch(0.50 0.13 75)" : "oklch(0.50 0.20 25)";
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="oklch(0.93 0.06 345)" strokeWidth={small ? 4 : 5} />
+      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="oklch(0.92 0.05 305)" strokeWidth={small ? 4 : 5} />
       <circle
         cx={size / 2} cy={size / 2} r={R}
         fill="none"
@@ -941,7 +967,7 @@ function AdherenceRing({ pct, small = false }: { pct: number; small?: boolean })
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
       />
       {!small && (
-        <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" fontSize="10" fontWeight="700" fill="oklch(0.18 0.04 340)">
+        <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" fontSize="10" fontWeight="700" fill="oklch(0.18 0.03 295)">
           {pct}%
         </text>
       )}
@@ -989,18 +1015,18 @@ function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
         {[80, 100, 120, 140].map((v) => (
           <g key={v}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={ys(v)} y2={ys(v)} stroke="oklch(0.90 0.018 340)" strokeWidth="1" />
-            <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.52 0.06 340)">{v}</text>
+            <line x1={PAD.l} x2={W - PAD.r} y1={ys(v)} y2={ys(v)} stroke="oklch(0.91 0.012 300)" strokeWidth="1" />
+            <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.50 0.04 295)">{v}</text>
           </g>
         ))}
         <line x1={PAD.l} x2={W - PAD.r} y1={threshold} y2={threshold} stroke="oklch(0.50 0.20 25)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
-        <path d={sysPath} stroke="oklch(0.53 0.22 345)" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={diaPath} stroke="oklch(0.38 0.15 345)" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={sysPath} stroke="oklch(0.52 0.20 305)" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={diaPath} stroke="oklch(0.38 0.15 305)" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round" strokeLinejoin="round" />
         {data.map((d, i) => (
           <g key={i}>
-            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4.5 : 3} fill={d.sys >= 140 ? "oklch(0.50 0.20 25)" : "oklch(0.53 0.22 345)"} />
-            <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 345)" opacity="0.7" />
-            <text x={xs(i)} y={H - 4} fontSize="9" fill="oklch(0.52 0.06 340)" textAnchor="middle">{d.day}</text>
+            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4.5 : 3} fill={d.sys >= 140 ? "oklch(0.50 0.20 25)" : "oklch(0.52 0.20 305)"} />
+            <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 305)" opacity="0.7" />
+            <text x={xs(i)} y={H - 4} fontSize="9" fill="oklch(0.50 0.04 295)" textAnchor="middle">{d.day}</text>
           </g>
         ))}
       </svg>
