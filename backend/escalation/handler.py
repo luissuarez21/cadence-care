@@ -116,3 +116,45 @@ def escalate(patient_id: str) -> EscalationSummary:
     _notify_clinician(escalation)
     _kickoff_judge(escalation, symptoms)
     return escalation
+
+
+def escalate_safety(patient_id: str, verdict) -> EscalationSummary:
+    """
+    Escalate a SafetyVerdict from the semantic safety layer (backend/safety).
+
+    Distinct from escalate(): the trigger is a condition-agnostic crisis signal
+    (self-harm, abuse, acute emergency) detected on the patient's message, NOT a
+    care-plan vitals threshold. Builds the clinical handoff from the verdict and
+    dispatches it through the same Redis + WebSocket + Web Push path so it lands
+    in the clinician inbox identically. Does NOT fire the vitals LLM-as-judge
+    (that eval is about care-plan escalations).
+    """
+    _CATEGORY_LABEL = {
+        "self_harm": "expressed thoughts of self-harm",
+        "abuse": "indicated they may be unsafe or experiencing abuse",
+        "medical_emergency": "reported a possible acute medical emergency",
+        "acute_distress": "is in acute distress",
+    }
+    label = _CATEGORY_LABEL.get(verdict.category, "needs urgent review")
+    escalation = EscalationSummary(
+        escalation_id=f"esc-{patient_id}-{uuid.uuid4().hex[:8]}",
+        patient_id=patient_id,
+        patient_name=_display_name(patient_id),
+        timestamp=datetime.now(timezone.utc),
+        severity=verdict.severity,
+        summary=(
+            f"Safety alert: patient {label} in a check-in message. "
+            f"{verdict.rationale}".strip()
+        ),
+        triggering_readings=[],
+        pattern_context=[],
+        recommended_action=(
+            "Contact the patient now. This is a safety concern outside the care plan; "
+            "follow your crisis-response protocol."
+        ),
+    )
+
+    redis_client.write_escalation(patient_id, escalation)
+    redis_client.publish_escalation(escalation)
+    _notify_clinician(escalation)
+    return escalation

@@ -36,12 +36,23 @@ All request/response shapes are defined in `ingestion/api_models.py`.
 | `SymptomLog` | `log_symptom` | history view, patterns, risk, clinician detail |
 | `RiskScore` | `assess_risk` | chat response, panel ranking, clinician detail |
 | `PatternAlert` | `detect_pattern` | clinician detail |
-| `EscalationSummary` | `escalate_to_clinician` | escalation inbox (REST + WebSocket) |
+| `EscalationSummary` | `escalate_to_clinician` **and** `escalation.handler.escalate_safety` | escalation inbox (REST + WebSocket) |
 | `VisitSummary` | `generate_visit_summary` | patient summary page, clinician detail |
 | `ChatMessage` | chat turns | chat thread |
+| `SafetyVerdict` | `safety.classifier.classify` (semantic safety layer) | orchestrator gating; Arize span |
 
 **Shared literals:** `Severity = "ok" | "monitor" | "escalate" | "escalate_urgent"`,
-`Role = "patient" | "clinician"`, `ActionType = "message" | "book" | "flag" | "note"`.
+`Role = "patient" | "clinician"`, `ActionType = "message" | "book" | "flag" | "note"`,
+`SafetyCategory = "none" | "self_harm" | "abuse" | "medical_emergency" | "acute_distress"`.
+
+**Semantic safety layer (`backend/safety/classifier.py`, Adit).** Runs on every
+free-text patient message in `orchestrator.respond`, in parallel to the care-plan
+risk engine. Condition-agnostic — catches self-harm / abuse / acute emergency the
+condition pack can't encode. An `escalate`/`escalate_urgent` verdict calls
+`escalate_safety` (clinician inbox); `escalate_urgent` also short-circuits the agent
+and returns `classifier.CRISIS_RESPONSE` verbatim. Every verdict is traced to Arize.
+⚠️ **Luis:** `CRISIS_RESPONSE` copy + the crisis system-prompt block + harm-category
+thresholds need clinical validation (placeholders in place; US-specific 988).
 
 ---
 
