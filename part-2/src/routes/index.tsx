@@ -320,7 +320,7 @@ function CadenceMark() {
       <circle cx="14" cy="14" r="13" stroke="currentColor" strokeOpacity="0.15" />
       <path
         d="M4 16 L9 16 L11 11 L14 20 L17 8 L20 16 L24 16"
-        stroke="oklch(0.38 0.06 200)"
+        stroke="oklch(0.52 0.20 305)"
         strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -848,18 +848,18 @@ function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
         {[80, 100, 120, 140].map((v) => (
           <g key={v}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={ys(v)} y2={ys(v)} stroke="oklch(0.91 0.008 230)" strokeWidth="1" />
-            <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.48 0.02 240)">{v}</text>
+            <line x1={PAD.l} x2={W - PAD.r} y1={ys(v)} y2={ys(v)} stroke="oklch(0.91 0.012 300)" strokeWidth="1" />
+            <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.50 0.04 295)">{v}</text>
           </g>
         ))}
         <line x1={PAD.l} x2={W - PAD.r} y1={threshold} y2={threshold} stroke="oklch(0.5 0.2 25)" strokeWidth="1" strokeDasharray="4 4" opacity="0.6" />
-        <path d={sysPath} stroke="oklch(0.38 0.06 200)" strokeWidth="2" fill="none" />
-        <path d={diaPath} stroke="oklch(0.28 0.05 200)" strokeWidth="2" fill="none" opacity="0.6" />
+        <path d={sysPath} stroke="oklch(0.52 0.20 305)" strokeWidth="2" fill="none" />
+        <path d={diaPath} stroke="oklch(0.38 0.15 305)" strokeWidth="2" fill="none" opacity="0.6" />
         {data.map((d, i) => (
           <g key={i}>
-            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4 : 2.5} fill={d.sys >= 140 ? "oklch(0.5 0.2 25)" : "oklch(0.38 0.06 200)"} />
-            <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.28 0.05 200)" opacity="0.7" />
-            <text x={xs(i)} y={H - 6} fontSize="9" fill="oklch(0.48 0.02 240)" textAnchor="middle">{d.day}</text>
+            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4 : 2.5} fill={d.sys >= 140 ? "oklch(0.5 0.2 25)" : "oklch(0.52 0.20 305)"} />
+            <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 305)" opacity="0.7" />
+            <text x={xs(i)} y={H - 6} fontSize="9" fill="oklch(0.50 0.04 295)" textAnchor="middle">{d.day}</text>
           </g>
         ))}
       </svg>

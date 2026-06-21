@@ -49,32 +49,32 @@
 :root {
   --radius: 0.625rem;
 
-  /* Clinical palette: deep ink, parchment surface, restrained teal accent */
-  --background: oklch(0.985 0.005 95);
-  --foreground: oklch(0.21 0.025 240);
+  /* Clinical palette: deep purple-navy ink, white surface, lavender accent */
+  --background: oklch(0.985 0.006 305);
+  --foreground: oklch(0.18 0.03 295);
   --surface: oklch(1 0 0);
-  --surface-elevated: oklch(0.995 0.003 95);
+  --surface-elevated: oklch(0.995 0.005 305);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.025 240);
+  --card-foreground: oklch(0.18 0.03 295);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.025 240);
+  --popover-foreground: oklch(0.18 0.03 295);
 
-  --primary: oklch(0.38 0.06 200);          /* deep teal-slate */
-  --primary-foreground: oklch(0.99 0.003 95);
-  --secondary: oklch(0.95 0.012 220);
-  --secondary-foreground: oklch(0.28 0.04 230);
-  --muted: oklch(0.96 0.008 230);
-  --muted-foreground: oklch(0.48 0.02 240);
-  --accent: oklch(0.92 0.045 180);          /* soft teal */
-  --accent-foreground: oklch(0.28 0.05 200);
+  --primary: oklch(0.52 0.20 305);          /* medium-deep purple */
+  --primary-foreground: oklch(0.99 0.003 305);
+  --secondary: oklch(0.94 0.025 305);
+  --secondary-foreground: oklch(0.32 0.10 305);
+  --muted: oklch(0.96 0.012 300);
+  --muted-foreground: oklch(0.50 0.04 295);
+  --accent: oklch(0.92 0.05 305);           /* soft lavender */
+  --accent-foreground: oklch(0.32 0.12 305);
   --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(0.99 0.003 95);
 
-  --border: oklch(0.91 0.008 230);
-  --border-strong: oklch(0.83 0.012 230);
-  --input: oklch(0.92 0.01 230);
-  --ring: oklch(0.55 0.08 200);
+  --border: oklch(0.91 0.012 300);
+  --border-strong: oklch(0.84 0.018 300);
+  --input: oklch(0.93 0.015 300);
+  --ring: oklch(0.60 0.18 305);
 
   --risk-ok: oklch(0.42 0.09 155);
   --risk-ok-bg: oklch(0.95 0.04 155);
