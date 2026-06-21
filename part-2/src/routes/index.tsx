@@ -412,11 +412,11 @@ function ClinicianDashboard() {
   return (
     <>
       <ClinicianSplash loading={panelLoading} />
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-screen bg-background flex flex-col overflow-hidden">
         <TopBar view={view} onView={setView} newEscalations={newEscalations} />
 
         {view === "panel" ? (
-          <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
+          <div className="flex-1 grid lg:grid-cols-[280px_1fr] min-h-0 overflow-hidden">
             <aside className="bg-sidebar border-r border-border/60 flex flex-col overflow-hidden">
               <PanelHeader rows={rows} />
               <div className="flex-1 overflow-y-auto">
@@ -449,7 +449,7 @@ function ClinicianDashboard() {
               </div>
             </aside>
 
-            <main className="bg-background overflow-y-auto">
+            <main className="bg-background overflow-y-auto min-h-0">
               {detailLoading ? (
                 <DetailSkeleton />
               ) : detail ? (
@@ -948,13 +948,7 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
           sub={`of ${analytics.total} readings`}
           color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
         />
-        <AnalyticCard
-          label="Med adherence"
-          value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
-          sub="aspirin taken"
-          color={analytics.adherence !== null && analytics.adherence < 80 ? "text-risk-monitor" : "text-foreground"}
-          ring={analytics.adherence}
-        />
+        <AdherenceCard pct={analytics.adherence} />
       </div>
 
       {/* Smart inferences */}
@@ -1032,20 +1026,14 @@ function AnalyticsTab({ bp, analytics, patterns }: {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <AnalyticCard label="Total check-ins" value={String(analytics.total)} sub="this period" color="text-primary" />
+        <AnalyticCard label="Check-ins" value={String(analytics.total)} sub="this period" color="text-primary" />
         <AnalyticCard
           label="BP elevated"
           value={String(analytics.elevated)}
           sub="≥140 systolic"
           color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
         />
-        <AnalyticCard
-          label="Med adherence"
-          value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
-          sub="aspirin taken"
-          color={analytics.adherence !== null && analytics.adherence < 80 ? "text-risk-monitor" : "text-foreground"}
-          ring={analytics.adherence}
-        />
+        <AdherenceCard pct={analytics.adherence} />
         <AnalyticCard
           label="Headache days"
           value={String(analytics.headacheDays)}
@@ -1192,10 +1180,7 @@ function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters,
         <div className="flex items-center gap-3 mb-2">
           <RiskBadge risk={sev} />
           {adherence !== null && (
-            <div className="flex items-center gap-2">
-              <AdherenceRing pct={adherence} small />
-              <span className="text-xs text-muted-foreground">aspirin {adherence}%</span>
-            </div>
+            <span className="text-xs text-muted-foreground">aspirin {adherence}%</span>
           )}
         </div>
         <RiskMeter score={score} />
@@ -1281,7 +1266,7 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
   const unread = items.filter((e) => !e.acknowledged).length;
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       <div className="bg-surface border-b border-border px-5 py-4 flex items-center justify-between shrink-0" style={{ boxShadow: shadow }}>
         <div>
           <h1 className="font-display text-lg font-semibold">Escalations</h1>
@@ -1297,7 +1282,7 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-3xl mx-auto px-4 py-4">
           {items.length === 0 ? (
             <div className="py-16 text-center">
@@ -1438,14 +1423,6 @@ function Chip({ children, warn = false }: { children: React.ReactNode; warn?: bo
   );
 }
 
-function MetricChip({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div>
-      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-none mb-1">{label}</div>
-      <div className={`text-base font-semibold tabular-nums ${highlight ? "text-risk-escalate" : "text-foreground"}`}>{value}</div>
-    </div>
-  );
-}
 
 function BPTrendChip({ trend }: { trend: "up" | "down" | "stable" }) {
   const map = {
@@ -1462,41 +1439,50 @@ function BPTrendChip({ trend }: { trend: "up" | "down" | "stable" }) {
   );
 }
 
-function AnalyticCard({ label, value, sub, color, ring }: {
-  label: string; value: string; sub: string; color: string; ring?: number | null;
+function AnalyticCard({ label, value, sub, color }: {
+  label: string; value: string; sub: string; color: string;
 }) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-4 transition-shadow hover:shadow-md" style={{ boxShadow: shadow }}>
       <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{label}</div>
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <div className={`text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</div>
-          <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{sub}</div>
-        </div>
-        {ring != null && <AdherenceRing pct={ring} small />}
-      </div>
+      <div className={`text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</div>
+      <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{sub}</div>
     </div>
   );
 }
 
-function AdherenceRing({ pct, small = false }: { pct: number; small?: boolean }) {
-  const size = small ? 36 : 48;
-  const R = small ? 14 : 18;
+function AdherenceCard({ pct }: { pct: number | null }) {
+  const SIZE = 72;
+  const R = 28;
+  const STROKE = 6;
   const circ = 2 * Math.PI * R;
-  const dash = Math.max(0, Math.min(1, pct / 100)) * circ;
-  const color = pct >= 80 ? "oklch(0.40 0.08 155)" : pct >= 60 ? "oklch(0.48 0.11 75)" : "oklch(0.48 0.17 25)";
+  const fill = pct != null ? Math.max(0, Math.min(1, pct / 100)) * circ : 0;
+  const trackColor = "oklch(0.91 0.012 300)";
+  const fillColor = pct == null ? trackColor
+    : pct >= 80 ? "oklch(0.40 0.08 155)"
+    : pct >= 60 ? "oklch(0.48 0.11 75)"
+    : "oklch(0.48 0.17 25)";
+
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="oklch(0.92 0.05 305)" strokeWidth={small ? 4 : 5} />
-      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke={color} strokeWidth={small ? 4 : 5}
-        strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      {!small && (
-        <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" fontSize="10" fontWeight="700" fill="oklch(0.18 0.03 295)">
-          {pct}%
+    <div className="rounded-2xl border border-border bg-surface p-4 flex flex-col items-center justify-center gap-1 transition-shadow hover:shadow-md" style={{ boxShadow: shadow }}>
+      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider self-start mb-1">Adherence</div>
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="shrink-0">
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke={trackColor} strokeWidth={STROKE} />
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke={fillColor} strokeWidth={STROKE}
+          strokeDasharray={`${fill} ${circ - fill}`} strokeLinecap="round"
+          transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
+          style={{ transition: "stroke-dasharray 0.6s ease" }}
+        />
+        <text x={SIZE / 2} y={SIZE / 2 - 4} textAnchor="middle" dominantBaseline="central"
+          fontSize="15" fontWeight="700" fill="oklch(0.18 0.03 295)">
+          {pct != null ? `${pct}%` : "—"}
         </text>
-      )}
-    </svg>
+        <text x={SIZE / 2} y={SIZE / 2 + 12} textAnchor="middle" dominantBaseline="central"
+          fontSize="8" fontWeight="600" fill="oklch(0.50 0.04 295)">
+          ASPIRIN
+        </text>
+      </svg>
+    </div>
   );
 }
 
