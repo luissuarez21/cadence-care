@@ -61,15 +61,19 @@ def test_de_identify_strips_phi_and_hashes_id():
 
 # ── tracing degrades gracefully ──
 
-def test_setup_tracing_is_strict_by_default():
-    # No ARIZE_* env in tests → must RAISE, never silently no-op.
+def test_setup_tracing_is_strict_by_default(monkeypatch):
+    # Keys absent → must RAISE, never silently no-op.
     import pytest
+    monkeypatch.delenv("ARIZE_API_KEY", raising=False)
+    monkeypatch.delenv("ARIZE_SPACE_ID", raising=False)
     with pytest.raises(RuntimeError):
         setup_tracing()
 
 
-def test_setup_tracing_noop_only_as_explicit_optout():
+def test_setup_tracing_noop_only_as_explicit_optout(monkeypatch):
     # The no-op path is allowed ONLY when explicitly requested.
+    monkeypatch.delenv("ARIZE_API_KEY", raising=False)
+    monkeypatch.delenv("ARIZE_SPACE_ID", raising=False)
     assert setup_tracing(required=False) is None
 
 
