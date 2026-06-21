@@ -7,4 +7,6 @@ anthropic
 pywebpush
 python-dotenv
 arize-otel
+openinference-instrumentation-anthropic
+opentelemetry-sdk
 python-jose[cryptography]

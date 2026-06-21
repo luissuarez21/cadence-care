@@ -111,6 +111,19 @@ def setup_tracing(project_name: str = "cadence", required: bool = True) -> Optio
         api_key=os.environ["ARIZE_API_KEY"],
         project_name=project_name,
     )
+
+    # Auto-instrument the Anthropic SDK: every Claude call (safety.classify,
+    # orchestrator.turn, llm_as_judge) becomes a real LLM span with the full
+    # prompt, completion, model, and token counts — the rich traces the judges
+    # want to see, not just our thin custom attribute spans. Best-effort: if the
+    # instrumentor isn't installed, we still get the manual spans.
+    try:  # pragma: no cover - needs live SDK
+        from openinference.instrumentation.anthropic import AnthropicInstrumentor
+
+        AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)
+    except Exception:
+        pass
+
     return tracer_provider.get_tracer(__name__)
 
 
