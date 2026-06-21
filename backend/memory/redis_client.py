@@ -173,6 +173,19 @@ def get_escalations(patient_id: str) -> list[EscalationSummary]:
     return _list_read(escalations_key(patient_id), EscalationSummary)
 
 
+def acknowledge_escalation(patient_id: str, escalation_id: str) -> bool:
+    """Set acknowledged=True on a specific escalation. Returns True if found."""
+    key = escalations_key(patient_id)
+    raw_list = get_client().lrange(key, 0, -1)
+    for i, raw in enumerate(raw_list):
+        esc = EscalationSummary.model_validate_json(raw)
+        if esc.escalation_id == escalation_id:
+            esc.acknowledged = True
+            get_client().lset(key, i, esc.model_dump_json())
+            return True
+    return False
+
+
 # ── Push subscriptions (push_subscriptions:{clinician_id}) ──────────────────
 
 def save_push_subscription(clinician_id: str, subscription: dict) -> None:
