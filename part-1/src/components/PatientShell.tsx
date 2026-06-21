@@ -20,7 +20,7 @@ export function PatientShell({ children, eyebrow = "Good Morning", title = "Mari
 
   return (
     <div className="min-h-screen bg-sand-50 font-sans text-ink flex justify-center">
-      <div className="w-full max-w-[430px] bg-white min-h-screen shadow-2xl shadow-sand-200/60 flex flex-col relative">
+      <div className="w-full max-w-[430px] bg-white min-h-screen shadow-[0_0_60px_-15px] shadow-bloom-500/10 ring-1 ring-sand-200/50 flex flex-col relative">
         <header className="pt-12 px-6 pb-6 flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-[12px] font-semibold text-leaf-700 uppercase tracking-[0.18em] mb-1">
