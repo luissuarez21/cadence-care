@@ -111,6 +111,7 @@ def escalate(patient_id: str) -> EscalationSummary:
     )
 
     redis_client.write_escalation(patient_id, escalation)
+    redis_client.publish_escalation(escalation)  # live clinician WebSocket (CAD-29)
     _notify_clinician(escalation)
     _kickoff_judge(escalation, symptoms)
     return escalation
