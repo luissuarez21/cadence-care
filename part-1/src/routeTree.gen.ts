@@ -13,6 +13,7 @@ import { Route as WatchforRouteImport } from './routes/watchfor'
 import { Route as SummaryRouteImport } from './routes/summary'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as CheckinRouteImport } from './routes/checkin'
+import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -36,6 +37,11 @@ const CheckinRoute = CheckinRouteImport.update({
   path: '/checkin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatsRoute = ChatsRouteImport.update({
+  id: '/chats',
+  path: '/chats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -50,6 +56,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
+  '/chats': typeof ChatsRoute
   '/checkin': typeof CheckinRoute
   '/history': typeof HistoryRoute
   '/summary': typeof SummaryRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
+  '/chats': typeof ChatsRoute
   '/checkin': typeof CheckinRoute
   '/history': typeof HistoryRoute
   '/summary': typeof SummaryRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
+  '/chats': typeof ChatsRoute
   '/checkin': typeof CheckinRoute
   '/history': typeof HistoryRoute
   '/summary': typeof SummaryRoute
@@ -74,13 +83,21 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/chat' | '/checkin' | '/history' | '/summary' | '/watchfor'
+  fullPaths:
+    | '/'
+    | '/chat'
+    | '/chats'
+    | '/checkin'
+    | '/history'
+    | '/summary'
+    | '/watchfor'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/chat' | '/checkin' | '/history' | '/summary' | '/watchfor'
+  to: '/' | '/chat' | '/chats' | '/checkin' | '/history' | '/summary' | '/watchfor'
   id:
     | '__root__'
     | '/'
     | '/chat'
+    | '/chats'
     | '/checkin'
     | '/history'
     | '/summary'
@@ -90,6 +107,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChatRoute: typeof ChatRoute
+  ChatsRoute: typeof ChatsRoute
   CheckinRoute: typeof CheckinRoute
   HistoryRoute: typeof HistoryRoute
   SummaryRoute: typeof SummaryRoute
@@ -126,6 +144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckinRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chats': {
+      id: '/chats'
+      path: '/chats'
+      fullPath: '/chats'
+      preLoaderRoute: typeof ChatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat': {
       id: '/chat'
       path: '/chat'
@@ -146,6 +171,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChatRoute: ChatRoute,
+  ChatsRoute: ChatsRoute,
   CheckinRoute: CheckinRoute,
   HistoryRoute: HistoryRoute,
   SummaryRoute: SummaryRoute,
