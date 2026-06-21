@@ -886,7 +886,7 @@ function PatientDetailView({ detail }: { detail: PatientDetail }) {
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto">
-          {detail.timeline.length === 0 && !detail.visit_summary && tab !== "visit" ? (
+          {detail.timeline.length === 0 && tab !== "visit" ? (
             <div className="m-5 rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-6 py-12 text-center">
               <img src="/icon-512.png" alt="" className="w-10 h-10 rounded-xl mx-auto mb-3 opacity-40" />
               <p className="text-sm text-muted-foreground">No check-in data yet for {detail.patient_name}.</p>
@@ -1222,7 +1222,9 @@ function TimelineTab({ timeline }: { timeline: SymptomLog[] }) {
             const flagged = (e.bp_systolic ?? 0) >= 140;
             const hasHeadache = (e.headache_severity ?? 0) > 0;
             const bp = e.bp_systolic != null ? `${e.bp_systolic}/${e.bp_diastolic}` : null;
-            const summary = e.raw_text ?? (bp ? `BP ${bp}` : "Check-in");
+            const rawText = e.raw_text?.trim() || null;
+            const summary = rawText ?? (bp ? `BP ${bp}` : "Check-in");
+            const showBpSub = bp && rawText; // only show BP sub-line when title is the raw narrative
             return (
               <div key={i} className="relative flex gap-4">
                 <div className="flex flex-col items-center shrink-0 pt-1.5">
@@ -1235,7 +1237,7 @@ function TimelineTab({ timeline }: { timeline: SymptomLog[] }) {
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="text-sm font-medium leading-snug">{summary}</div>
-                      {bp && e.raw_text && <div className="text-xs text-muted-foreground mt-0.5">BP {bp}</div>}
+                      {showBpSub && <div className="text-xs text-muted-foreground mt-0.5">BP {bp}</div>}
                       {e.notes && <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{e.notes}</div>}
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {e.headache_severity != null && e.headache_severity > 0 && (
