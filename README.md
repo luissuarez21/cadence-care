@@ -120,6 +120,8 @@ clinical judge's hardest question.
 - **Vercel** — Both apps ship as separate Vercel projects from one repo: the **Patient PWA**
   (installable, mobile-first) and the **Clinician Dashboard** (desktop), each pointed at the
   deployed backend via `VITE_API_URL`.
+- **Railway** — The FastAPI backend is deployed on Railway (`railway.toml`: NIXPACKS build,
+  `uvicorn` start command, `/api/health` healthcheck). This is the API both Vercel apps target.
 
 ---
 
@@ -129,7 +131,8 @@ clinical judge's hardest question.
 seven frozen tools (`agent/tools.py`), Vision plan ingestion (`ingestion/pipeline.py`), Redis
 memory + RAG (`memory/`), risk engine + pattern detection (`risk/`), escalation handler
 (`escalation/`), Web Push (`notifications/push.py`), Arize tracing + judge (`eval/`). Every tool
-returns a Pydantic model from the frozen schema; the data shapes *are* the contract.
+returns a Pydantic model from the frozen schema; the data shapes *are* the contract. Deployed on
+**Railway** (`railway.toml`).
 
 **Frontend** — Two TanStack Start (Vite + Nitro) apps: `part-1` (Patient PWA) and `part-2`
 (Clinician Dashboard), both React + Tailwind, deployed on Vercel.
