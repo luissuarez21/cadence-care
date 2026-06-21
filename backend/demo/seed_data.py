@@ -62,10 +62,53 @@ def seed_all() -> dict[str, int]:
     }
 
 
-if __name__ == "__main__":
+# All patient-scoped key families written during a demo. Wiped before a reseed so
+# a "start fresh" leaves nothing behind — chat (sessions are keyed by UUID, hence
+# the wildcard), escalations, the "book sooner" follow-up + clinician messages
+# that surface in the patient app, etc. push_subscriptions is intentionally left
+# alone so the clinician's Web Push stays registered across resets.
+_WIPE_PREFIXES = (
+    "plan", "session", "symptoms", "risk_timeline",
+    "vector", "escalations", "messages", "notes", "followup",
+)
+
+
+def _wipe() -> int:
+    """Delete every patient-data key. Returns the count removed."""
+    client = redis_client.get_client()
+    deleted = 0
+    for prefix in _WIPE_PREFIXES:
+        for key in client.scan_iter(match=f"{prefix}:*"):
+            client.delete(key)
+            deleted += 1
+    return deleted
+
+
+def reset_demo() -> dict[str, int]:
+    """
+    Wipe all patient data, then reseed the full demo dataset. Idempotent — safe to
+    call repeatedly (right before each demo run) to guarantee a pristine state with
+    no leftover crisis chat, escalations, or follow-up banners.
+    """
+    deleted = _wipe()
     counts = seed_all()
-    print(
-        f"Seeded {maria_data.PATIENT_NAME} (hero) + {counts['panel_patients']} panel "
-        f"patients. Maria symptoms={counts['maria_symptoms']}, "
-        f"panel symptoms={counts['panel_symptoms']}."
-    )
+    counts["deleted_keys"] = deleted
+    return counts
+
+
+if __name__ == "__main__":
+    import sys
+
+    if "--reset" in sys.argv:
+        counts = reset_demo()
+        print(
+            f"Reset: wiped {counts['deleted_keys']} keys, reseeded "
+            f"{counts['panel_patients']} panel patients + {maria_data.PATIENT_NAME}."
+        )
+    else:
+        counts = seed_all()
+        print(
+            f"Seeded {maria_data.PATIENT_NAME} (hero) + {counts['panel_patients']} panel "
+            f"patients. Maria symptoms={counts['maria_symptoms']}, "
+            f"panel symptoms={counts['panel_symptoms']}."
+        )
