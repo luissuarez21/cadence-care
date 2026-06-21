@@ -20,7 +20,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
-from ..ingestion.schema import EscalationSummary, SymptomLog
+from ..ingestion.schema import EscalationSummary, RiskScore, SymptomLog
 from ..memory import redis_client
 
 
@@ -151,6 +151,21 @@ def escalate_safety(patient_id: str, verdict) -> EscalationSummary:
         recommended_action=(
             "Contact the patient now. This is a safety concern outside the care plan; "
             "follow your crisis-response protocol."
+        ),
+    )
+
+    # Also write a RiskScore so the patient jumps to the TOP of the risk-ranked
+    # panel — not just the escalation inbox. The panel sorts by risk_timeline, so
+    # without this a safety crisis would alert but not re-rank the patient.
+    redis_client.append_risk(
+        patient_id,
+        RiskScore(
+            patient_id=patient_id,
+            timestamp=datetime.now(timezone.utc),
+            severity=verdict.severity,
+            rationale=escalation.summary,
+            recommended_action=escalation.recommended_action,
+            triggered_flags=[f"Safety alert: {verdict.category.replace('_', ' ')}"],
         ),
     )
 

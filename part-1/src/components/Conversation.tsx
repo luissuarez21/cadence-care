@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { Send, Heart, MessagesSquare } from "lucide-react";
 import { toast } from "sonner";
@@ -206,9 +206,57 @@ function ChatBubble({ msg }: { msg: Msg }) {
     <div className="flex items-end gap-2">
       <Avatar />
       <div className="max-w-[80%] bg-sand-100 text-ink rounded-2xl rounded-bl-md px-4 py-3 text-[14px] leading-relaxed">
-        {msg.text}
+        <MarkdownText text={msg.text} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Minimal, dependency-free markdown for Cade's messages: **bold**, *italic* /
+ * _italic_, line breaks, and "- "/"* " bullet lists. XSS-safe by construction —
+ * only text nodes and <strong>/<em> are produced (no dangerouslySetInnerHTML).
+ */
+function renderInline(text: string, keyPrefix: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*|_[^_\n]+_)/g);
+  return parts.map((part, i) => {
+    if (!part) return null;
+    const key = `${keyPrefix}-${i}`;
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={key}>{part.slice(2, -2)}</strong>;
+    }
+    if (
+      (part.startsWith("*") && part.endsWith("*")) ||
+      (part.startsWith("_") && part.endsWith("_"))
+    ) {
+      return <em key={key}>{part.slice(1, -1)}</em>;
+    }
+    return <span key={key}>{part}</span>;
+  });
+}
+
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  return (
+    <>
+      {lines.map((line, i) => {
+        const isBullet = /^\s*[-*]\s+/.test(line);
+        if (isBullet) {
+          return (
+            <span key={i} className="flex gap-1.5">
+              <span className="text-bloom-500 shrink-0">•</span>
+              <span>{renderInline(line.replace(/^\s*[-*]\s+/, ""), `l${i}`)}</span>
+            </span>
+          );
+        }
+        // Preserve blank lines as spacing; render normal lines as stacked blocks.
+        return (
+          <span key={i} className="block">
+            {line ? renderInline(line, `l${i}`) : " "}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
