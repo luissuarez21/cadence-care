@@ -567,7 +567,11 @@ function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean
 
 /* ── Patient detail ───────────────────────────────────────────────────────── */
 
+type DetailTab = "overview" | "analytics" | "visit" | "timeline";
+
 function PatientDetail({ detail }: { detail: PatientDetail }) {
+  const [tab, setTab] = useState<DetailTab>("overview");
+
   async function runAction(action: "message" | "book" | "flag" | "note", content: string) {
     try {
       const res = await api.post<{ ok: boolean; message: string }>("/clinician/action", {
@@ -592,278 +596,474 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
   const bp = bpSeries(detail.timeline);
   const starters = detail.visit_summary?.conversation_starters ?? [];
   const briefing = detail.visit_summary?.clinician_facing ?? "";
-  const metrics = detail.visit_summary?.key_metrics ?? {};
   const analytics = computeAnalytics(detail.timeline);
+  const inferences = computeInferences(detail.timeline);
+
+  const tabs: { id: DetailTab; label: string; badge?: number }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "analytics", label: "Analytics" },
+    { id: "visit", label: "Visit prep" },
+    { id: "timeline", label: "Timeline", badge: detail.timeline.length },
+  ];
 
   return (
-    <div>
-      {/* ── Sticky page header ── */}
-      <div className="sticky top-0 z-10 bg-surface border-b border-border" style={{ boxShadow: shadow }}>
+    <div className="flex flex-col h-full">
+      {/* ── Sticky header ── */}
+      <div className="sticky top-0 z-10 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
+        {/* Patient identity + actions */}
         <div className="px-5 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <Avatar name={detail.patient_name} />
             <div className="min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-lg font-display font-semibold truncate">{detail.patient_name}</h1>
+                <h1 className="text-base font-display font-semibold truncate">{detail.patient_name}</h1>
                 <RiskBadge risk={sev} />
+                {detail.current_risk && (
+                  <span className="text-[11px] text-muted-foreground">
+                    assessed {fmtTime(detail.current_risk.timestamp)}
+                  </span>
+                )}
               </div>
-              {detail.current_risk && (
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Assessed {fmtTime(detail.current_risk.timestamp)}
-                </p>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Btn onClick={onMessage}>Message</Btn>
             <Btn onClick={onBook}>Book sooner</Btn>
-            <Btn onClick={() => runAction("flag", "Flagged for nurse review")}>Flag for nurse</Btn>
+            <Btn onClick={() => runAction("flag", "Flagged for nurse review")}>Flag</Btn>
             <Btn variant="primary" onClick={onNote}>Add note</Btn>
           </div>
         </div>
 
-        {/* Metrics strip */}
-        {(metrics.check_ins || metrics.avg_bp || metrics.peak_bp || metrics.headache_days) && (
-          <div className="px-5 pb-3 flex items-center gap-6 border-t border-border/50">
-            <div className="pt-2.5 flex items-center gap-6 flex-wrap">
-              {metrics.check_ins && <MetricChip label="Check-ins" value={metrics.check_ins} />}
-              {metrics.avg_bp && <MetricChip label="Avg BP" value={metrics.avg_bp} />}
-              {metrics.peak_bp && <MetricChip label="Peak BP" value={metrics.peak_bp} highlight />}
-              {metrics.headache_days && <MetricChip label="Headache days" value={metrics.headache_days} />}
-              <BPTrendChip trend={analytics.bpTrend} />
-            </div>
+        {/* Tab bar */}
+        <div className="px-5 flex items-center gap-0.5 border-t border-border/40">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`relative flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors duration-100 ${
+                tab === t.id
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              {t.badge !== undefined && t.badge > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-primary/12 text-primary text-[9px] font-bold tabular-nums">
+                  {t.badge}
+                </span>
+              )}
+              {tab === t.id && (
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t-full" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Tab content ── */}
+      <div className="flex-1 overflow-y-auto">
+        {detail.timeline.length === 0 && !detail.visit_summary && tab !== "visit" ? (
+          <div className="m-5 rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-6 py-12 text-center">
+            <p className="text-sm text-muted-foreground">No check-in data yet for {detail.patient_name}.</p>
+          </div>
+        ) : (
+          <div className="p-5">
+            {tab === "overview" && (
+              <OverviewTab detail={detail} sev={sev} score={score} analytics={analytics} inferences={inferences} />
+            )}
+            {tab === "analytics" && (
+              <AnalyticsTab bp={bp} analytics={analytics} patterns={detail.patterns} />
+            )}
+            {tab === "visit" && (
+              <VisitPrepTab
+                sev={sev}
+                score={score}
+                recommendedAction={detail.current_risk?.recommended_action ?? null}
+                triggeredFlags={detail.current_risk?.triggered_flags ?? []}
+                starters={starters}
+                briefing={briefing}
+                rationale={detail.current_risk?.rationale ?? null}
+                adherence={analytics.adherence}
+              />
+            )}
+            {tab === "timeline" && (
+              <TimelineTab timeline={detail.timeline} />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tab: Overview ────────────────────────────────────────────────────────── */
+
+function OverviewTab({ detail, sev, score, analytics, inferences }: {
+  detail: PatientDetail;
+  sev: DisplayRisk;
+  score: number;
+  analytics: Analytics;
+  inferences: ReturnType<typeof computeInferences>;
+}) {
+  return (
+    <div className="space-y-4 max-w-4xl">
+      {/* Risk + key stats row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Risk card */}
+        <div className="col-span-2 lg:col-span-1 rounded-2xl border border-border bg-surface p-4" style={{ boxShadow: shadow }}>
+          <SectionLabel>Risk level</SectionLabel>
+          <div className="mt-1 flex items-center gap-2">
+            <RiskBadge risk={sev} />
+          </div>
+          <RiskMeter score={score} />
+          <p className="mt-2 text-[11px] text-muted-foreground leading-relaxed line-clamp-3">
+            {detail.current_risk?.rationale ?? "No assessment yet."}
+          </p>
+        </div>
+
+        <AnalyticCard label="Check-ins" value={String(analytics.total)} sub="this period" color="text-primary" />
+        <AnalyticCard
+          label="BP elevated"
+          value={String(analytics.elevated)}
+          sub={`of ${analytics.total} readings`}
+          color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
+        />
+        <AnalyticCard
+          label="Med adherence"
+          value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
+          sub="aspirin taken"
+          color={analytics.adherence !== null && analytics.adherence < 80 ? "text-risk-monitor" : "text-foreground"}
+          ring={analytics.adherence}
+        />
+      </div>
+
+      {/* Smart inferences */}
+      {inferences.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-sm font-semibold text-foreground">Smart inferences</h2>
+            <span className="text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
+              AI · from check-in history
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {inferences.map((inf, i) => (
+              <div
+                key={i}
+                className="rounded-xl border border-border bg-surface p-3.5 flex gap-3 transition-all duration-150 hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-px"
+                style={{ boxShadow: shadow }}
+              >
+                <div className="text-xl shrink-0 mt-0.5">{inf.icon}</div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold leading-snug">{inf.title}</div>
+                  <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{inf.body}</div>
+                  <div className="mt-2 flex items-start gap-1.5">
+                    <span className="text-primary shrink-0 mt-[2px] text-[10px]">→</span>
+                    <span className="text-xs text-primary font-medium leading-relaxed">{inf.suggestion}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Detected patterns */}
+      {detail.patterns.length > 0 && (
+        <Card className="p-4">
+          <CardTitle>Detected patterns</CardTitle>
+          <ul className="mt-3 space-y-2">
+            {detail.patterns.map((p) => {
+              const psev: DisplayRisk = p.severity === "escalate_urgent" ? "escalate" : (p.severity as DisplayRisk);
+              const dotCls = psev === "escalate" ? "bg-risk-escalate" : psev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
+              return (
+                <li key={p.title} className="flex items-start gap-2.5 p-3 rounded-xl border border-border bg-background">
+                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
+                  <div>
+                    <div className="text-sm font-semibold">{p.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{p.detail}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ── Tab: Analytics ───────────────────────────────────────────────────────── */
+
+function AnalyticsTab({ bp, analytics, patterns }: {
+  bp: { day: string; sys: number; dia: number }[];
+  analytics: Analytics;
+  patterns: PatternAlert[];
+}) {
+  return (
+    <div className="space-y-4 max-w-4xl">
+      {/* 4 stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <AnalyticCard label="Total check-ins" value={String(analytics.total)} sub="this period" color="text-primary" />
+        <AnalyticCard
+          label="BP elevated"
+          value={String(analytics.elevated)}
+          sub={`≥140 systolic`}
+          color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
+        />
+        <AnalyticCard
+          label="Med adherence"
+          value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
+          sub="aspirin taken"
+          color={analytics.adherence !== null && analytics.adherence < 80 ? "text-risk-monitor" : "text-foreground"}
+          ring={analytics.adherence}
+        />
+        <AnalyticCard
+          label="Headache days"
+          value={String(analytics.headacheDays)}
+          sub="reported"
+          color={analytics.headacheDays >= 3 ? "text-risk-monitor" : "text-foreground"}
+        />
+      </div>
+
+      {/* BP trend + calendar side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <CardTitle>Blood pressure trend · {bp.length} readings</CardTitle>
+            <BPTrendChip trend={analytics.bpTrend} />
+          </div>
+          {bp.length > 0 ? (
+            <>
+              <BPChart data={bp} />
+              <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
+                <ChartLegend color="bg-primary" label="Systolic" />
+                <ChartLegend color="bg-primary/50" label="Diastolic" />
+                <ChartLegend label="140/90 threshold" dashed />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">No BP readings logged.</p>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <CardTitle>7-day activity</CardTitle>
+          <div className="mt-3 space-y-2">
+            {analytics.calendar.map((d, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                <span className="text-[11px] text-muted-foreground w-5 shrink-0">{d.day}</span>
+                <div className="flex-1 h-5 rounded-md bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-md transition-all ${
+                      d.flagged ? "bg-primary/80 w-full" : d.checked ? "bg-primary/35 w-full" : "w-0"
+                    }`}
+                  />
+                </div>
+                <span className="text-[10px] text-muted-foreground w-14 shrink-0 text-right">
+                  {d.flagged ? "Elevated BP" : d.checked ? "Check-in" : "No data"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 pt-3 border-t border-border flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/80 inline-block" /> Elevated</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/35 inline-block" /> Check-in</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* Patterns */}
+      {patterns.length > 0 && (
+        <Card className="p-4">
+          <CardTitle>Detected patterns</CardTitle>
+          <ul className="mt-3 space-y-2">
+            {patterns.map((p) => {
+              const psev: DisplayRisk = p.severity === "escalate_urgent" ? "escalate" : (p.severity as DisplayRisk);
+              const dotCls = psev === "escalate" ? "bg-risk-escalate" : psev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
+              return (
+                <li key={p.title} className="flex items-start gap-2.5 p-3 rounded-xl border border-border bg-background">
+                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
+                  <div>
+                    <div className="text-sm font-semibold">{p.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{p.detail}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ── Tab: Visit prep ──────────────────────────────────────────────────────── */
+
+function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters, briefing, rationale, adherence }: {
+  sev: DisplayRisk;
+  score: number;
+  recommendedAction: string | null;
+  triggeredFlags: string[];
+  starters: string[];
+  briefing: string;
+  rationale: string | null;
+  adherence: number | null;
+}) {
+  return (
+    <div className="space-y-4 max-w-3xl">
+      {/* Immediate action — prominent */}
+      <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5" style={{ boxShadow: shadow }}>
+        <SectionLabel>Immediate action</SectionLabel>
+        <p className="text-sm leading-relaxed font-medium">
+          {recommendedAction ?? "No specific action recorded for this patient."}
+        </p>
+        {triggeredFlags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {triggeredFlags.map((f) => (
+              <span key={f} className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold border border-primary/20">
+                {f}
+              </span>
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── Content grid ── */}
-      {detail.timeline.length === 0 && !detail.visit_summary ? (
-        <div className="m-4 rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-6 py-10 text-center">
-          <div className="text-3xl mb-2">🌸</div>
-          <p className="text-sm text-muted-foreground">No check-in data yet for {detail.patient_name}.</p>
-        </div>
-      ) : (
-        <div className="p-4 space-y-3">
-
-          {/* ── Row 1: Next steps — compact 3-col ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {/* Immediate action */}
-            <Card className="p-4">
-              <SectionLabel>Immediate action</SectionLabel>
-              {detail.current_risk?.recommended_action ? (
-                <p className="text-sm leading-relaxed">{detail.current_risk.recommended_action}</p>
-              ) : (
-                <p className="text-sm text-muted-foreground">No specific action recorded.</p>
-              )}
-              {detail.current_risk?.triggered_flags && detail.current_risk.triggered_flags.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {detail.current_risk.triggered_flags.map((f) => (
-                    <span key={f} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold border border-primary/20">
-                      {f}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Care plan reminders */}
-            <Card className="p-4">
-              <SectionLabel>Care plan reminders</SectionLabel>
-              <ul className="space-y-2">
-                {CARE_PLAN_REMINDERS.map((r, i) => (
-                  <li key={i} className="flex gap-2 text-xs leading-relaxed">
-                    <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-
-            {/* Conversation starters */}
-            <Card className="p-4">
-              <SectionLabel>Before the visit, ask</SectionLabel>
-              {starters.length === 0 ? (
-                <p className="text-sm text-muted-foreground">None generated yet.</p>
-              ) : (
-                <ol className="space-y-2">
-                  {starters.map((s, i) => (
-                    <li key={i} className="flex gap-2 text-xs leading-relaxed">
-                      <span className="shrink-0 w-4 h-4 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center tabular-nums mt-0.5">
-                        {i + 1}
-                      </span>
-                      {s}
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Card>
-          </div>
-
-          {/* ── Smart inferences ── */}
-          <SmartInferencesCard timeline={detail.timeline} />
-
-          {/* ── Row 2: Analytics ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <AnalyticCard
-              label="Total check-ins"
-              value={String(analytics.total)}
-              sub="this monitoring period"
-              color="text-primary"
-            />
-            <AnalyticCard
-              label="BP elevated"
-              value={String(analytics.elevated)}
-              sub={`of ${analytics.total} readings ≥140`}
-              color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
-            />
-            <AnalyticCard
-              label="Med adherence"
-              value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
-              sub="aspirin taken"
-              color={analytics.adherence !== null && analytics.adherence < 80 ? "text-risk-monitor" : "text-foreground"}
-              ring={analytics.adherence}
-            />
-            <AnalyticCard
-              label="Headache days"
-              value={String(analytics.headacheDays)}
-              sub="reported this period"
-              color={analytics.headacheDays >= 3 ? "text-risk-monitor" : "text-foreground"}
-            />
-          </div>
-
-          {/* Activity calendar */}
-          <Card className="p-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <CardTitle>7-day check-in activity</CardTitle>
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-primary/30 inline-block" /> Check-in</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-primary/80 inline-block" /> Elevated BP</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted border border-border inline-block" /> No data</span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-end gap-2">
-              {analytics.calendar.map((d, i) => (
-                <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
-                  <div
-                    className={`w-full rounded-md transition-all ${
-                      d.flagged
-                        ? "bg-primary/80 h-10"
-                        : d.checked
-                          ? "bg-primary/40 h-8"
-                          : "bg-muted border border-border/60 h-6"
-                    }`}
-                  />
-                  <span className="text-[10px] text-muted-foreground font-medium">{d.day}</span>
-                </div>
+      {/* 2-col: starters + reminders */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-4">
+          <SectionLabel>Before the visit, ask</SectionLabel>
+          {starters.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No starters generated yet.</p>
+          ) : (
+            <ol className="space-y-3">
+              {starters.map((s, i) => (
+                <li key={i} className="flex gap-3 text-sm leading-relaxed">
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-primary/12 text-primary text-[10px] font-bold flex items-center justify-center tabular-nums mt-0.5">
+                    {i + 1}
+                  </span>
+                  {s}
+                </li>
               ))}
+            </ol>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <SectionLabel>Care plan reminders</SectionLabel>
+          <ul className="space-y-2.5">
+            {CARE_PLAN_REMINDERS.map((r, i) => (
+              <li key={i} className="flex gap-2.5 text-sm leading-relaxed">
+                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
+                {r}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      {/* Pre-visit briefing */}
+      {briefing && (
+        <Card className="p-4">
+          <SectionLabel>Pre-visit briefing</SectionLabel>
+          <p className="text-sm leading-relaxed">{briefing}</p>
+        </Card>
+      )}
+
+      {/* Risk summary */}
+      <Card className="p-4">
+        <SectionLabel>Risk summary</SectionLabel>
+        <div className="flex items-center gap-3 mb-2">
+          <RiskBadge risk={sev} />
+          {adherence !== null && (
+            <div className="flex items-center gap-2">
+              <AdherenceRing pct={adherence} small />
+              <span className="text-xs text-muted-foreground">aspirin {adherence}%</span>
             </div>
-          </Card>
-
-          {/* ── Row 3: BP chart + Patterns ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-3">
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-1">
-                <CardTitle>Blood pressure · {bp.length} readings</CardTitle>
-              </div>
-              {bp.length > 0 ? (
-                <>
-                  <BPChart data={bp} />
-                  <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
-                    <ChartLegend color="bg-primary" label="Systolic" />
-                    <ChartLegend color="bg-accent-foreground" label="Diastolic" />
-                    <ChartLegend label="140/90 threshold" dashed />
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground mt-2">No BP readings logged.</p>
-              )}
-            </Card>
-
-            <Card className="p-4">
-              <CardTitle>Detected patterns</CardTitle>
-              {detail.patterns.length === 0 ? (
-                <div className="mt-2 text-center py-4">
-                  <div className="text-2xl mb-1">✓</div>
-                  <p className="text-sm text-risk-ok font-semibold">No concerning patterns</p>
-                </div>
-              ) : (
-                <ul className="mt-2 space-y-2">
-                  {detail.patterns.map((p) => {
-                    const psev: DisplayRisk = p.severity === "escalate_urgent" ? "escalate" : (p.severity as DisplayRisk);
-                    const dotCls = psev === "escalate" ? "bg-risk-escalate" : psev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
-                    return (
-                      <li key={p.title} className="flex items-start gap-2.5 p-3 rounded-xl border border-border bg-muted/40">
-                        <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
-                        <div>
-                          <div className="text-sm font-semibold">{p.title}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{p.detail}</div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Card>
-          </div>
-
-          {/* ── Row 4: Pre-visit briefing + Risk ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
-            <Card className="p-4">
-              <CardTitle>Pre-visit briefing</CardTitle>
-              <p className="text-sm leading-relaxed mt-1">{briefing || "No briefing available yet."}</p>
-            </Card>
-
-            <Card className="p-4">
-              <CardTitle>Risk assessment</CardTitle>
-              <div className="mt-2 flex items-center gap-2">
-                <RiskBadge risk={sev} />
-                <span className="text-xs text-muted-foreground">overall</span>
-              </div>
-              <RiskMeter score={score} />
-              <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
-                {detail.current_risk?.rationale ?? "No rationale available."}
-              </p>
-              {analytics.adherence !== null && (
-                <div className="mt-3 pt-3 border-t border-border flex items-center gap-3">
-                  <AdherenceRing pct={analytics.adherence} />
-                  <div>
-                    <div className="text-xs font-semibold">Medication adherence</div>
-                    <div className="text-[11px] text-muted-foreground">aspirin taken {analytics.adherence}% of days</div>
-                  </div>
-                </div>
-              )}
-            </Card>
-          </div>
-
-          {/* ── Row 5: Timeline ── */}
-          <Card className="p-4">
-            <CardTitle>Timeline · since last visit</CardTitle>
-            {detail.timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground mt-2">No check-ins yet.</p>
-            ) : (
-              <div className="mt-3 divide-y divide-border">
-                {[...detail.timeline].reverse().map((e, i) => {
-                  const flagged = (e.bp_systolic ?? 0) >= 140;
-                  const summary = e.raw_text ?? `BP ${e.bp_systolic ?? "—"}/${e.bp_diastolic ?? "—"}`;
-                  return (
-                    <div key={i} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
-                      <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${flagged ? "bg-risk-escalate" : "bg-border-strong"}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm">{summary}</div>
-                        {e.notes && <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{e.notes}</div>}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{fmtDate(e.timestamp)}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          <p className="pb-1 text-[11px] text-muted-foreground text-center">
-            All entries traced in Arize · LLM-as-judge confidence: 0.97
-          </p>
+          )}
         </div>
+        <RiskMeter score={score} />
+        {rationale && <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{rationale}</p>}
+        <p className="mt-3 text-[10px] text-muted-foreground">
+          Assessed by Cadence AI · LLM-as-judge confidence: 0.97 · All decisions traced in Arize
+        </p>
+      </Card>
+    </div>
+  );
+}
+
+/* ── Tab: Timeline ────────────────────────────────────────────────────────── */
+
+function TimelineTab({ timeline }: { timeline: SymptomLog[] }) {
+  const sorted = [...timeline].reverse();
+  return (
+    <div className="max-w-2xl space-y-1">
+      {sorted.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">No check-ins logged yet.</p>
+      ) : (
+        sorted.map((e, i) => {
+          const flagged = (e.bp_systolic ?? 0) >= 140;
+          const hasHeadache = (e.headache_severity ?? 0) > 0;
+          const bp = e.bp_systolic != null ? `${e.bp_systolic}/${e.bp_diastolic}` : null;
+          const summary = e.raw_text ?? (bp ? `BP ${bp}` : "Check-in");
+          return (
+            <div
+              key={i}
+              className={`relative flex gap-4 pb-4 ${i < sorted.length - 1 ? "border-b border-border/50" : ""}`}
+            >
+              {/* Timeline spine */}
+              <div className="flex flex-col items-center shrink-0 pt-0.5">
+                <div className={`w-2.5 h-2.5 rounded-full ring-2 ring-surface ${flagged ? "bg-risk-escalate" : hasHeadache ? "bg-risk-monitor" : "bg-border-strong"}`} />
+                {i < sorted.length - 1 && <div className="w-px flex-1 bg-border/60 mt-1.5" />}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0 pt-0 pb-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{summary}</div>
+                    {bp && e.raw_text && (
+                      <div className="text-xs text-muted-foreground mt-0.5">BP {bp}</div>
+                    )}
+                    {e.notes && (
+                      <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{e.notes}</div>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {e.headache_severity != null && e.headache_severity > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border font-medium">
+                          Headache {e.headache_severity}/10
+                        </span>
+                      )}
+                      {e.swelling_location && e.swelling_location !== "none" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border font-medium">
+                          Swelling: {e.swelling_location}
+                        </span>
+                      )}
+                      {e.vision_changes === true && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-risk-monitor-bg text-risk-monitor border border-risk-monitor/20 font-medium">
+                          Vision changes
+                        </span>
+                      )}
+                      {e.fetal_movement && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border font-medium">
+                          Movement: {e.fetal_movement}
+                        </span>
+                      )}
+                      {e.medication_taken === false && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border text-muted-foreground font-medium">
+                          Aspirin missed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums whitespace-nowrap pt-0.5">
+                    {fmtDate(e.timestamp)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -957,42 +1157,6 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
         </div>
       </div>
     </div>
-  );
-}
-
-/* ── Smart inferences card ───────────────────────────────────────────────── */
-
-function SmartInferencesCard({ timeline }: { timeline: SymptomLog[] }) {
-  const inferences = computeInferences(timeline);
-  if (inferences.length === 0) return null;
-
-  return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <CardTitle>Smart inferences</CardTitle>
-        <span className="text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
-          AI · from check-in history
-        </span>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-        {inferences.map((inf, i) => (
-          <div
-            key={i}
-            className="rounded-xl border border-border bg-background p-3 flex gap-3 group transition-all duration-150 hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-px"
-          >
-            <div className="text-lg shrink-0 mt-0.5">{inf.icon}</div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold leading-snug">{inf.title}</div>
-              <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{inf.body}</div>
-              <div className="mt-2 flex items-start gap-1.5">
-                <span className="text-primary shrink-0 mt-[2px] text-[10px]">→</span>
-                <span className="text-xs text-primary font-medium leading-relaxed">{inf.suggestion}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
   );
 }
 
