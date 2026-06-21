@@ -121,3 +121,11 @@ async def demo_logout(response: Response) -> dict:
     """Clear all cadence session cookies."""
     _clear_cookies(response)
     return {"ok": True}
+
+
+@router.post("/seed")
+async def demo_seed() -> dict:
+    """Seed Maria Chen + synthetic panel into Redis. Safe to re-run (idempotent)."""
+    from ..demo.seed_data import seed_all
+    counts = seed_all()
+    return {"ok": True, **counts}
