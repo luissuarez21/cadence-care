@@ -12,4 +12,6 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Force Nitro even outside Lovable context so the SSR layer + index.html are generated.
+  nitro: true,
 });
