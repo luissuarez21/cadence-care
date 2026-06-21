@@ -1,11 +1,8 @@
 [build]
 builder = "NIXPACKS"
-rootDirectory = "backend"
 
 [deploy]
-# run.py adds repo root to sys.path so relative imports work,
-# then calls uvicorn with backend.main:app.
-startCommand = "python run.py"
+startCommand = "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
