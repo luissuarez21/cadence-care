@@ -1,10 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { Rabbit, ListChecks, BookOpen, FileText } from "lucide-react";
+import { ClipboardCheck, MessageCircle, ShieldAlert, BookOpen, FileText } from "lucide-react";
 
 const tabs = [
-  { to: "/", label: "Cade", icon: Rabbit },
-  { to: "/watchfor", label: "Watch For", icon: ListChecks },
+  { to: "/checkin", label: "Check-in", icon: ClipboardCheck },
+  { to: "/", label: "Chats", icon: MessageCircle },
+  { to: "/watchfor", label: "Watch", icon: ShieldAlert },
   { to: "/history", label: "History", icon: BookOpen },
   { to: "/summary", label: "Visit", icon: FileText },
 ] as const;
@@ -35,9 +36,10 @@ export function PatientShell({ children, eyebrow = "Good Afternoon", title = "Ma
 
         <main className="flex-1 px-6 pb-36">{children}</main>
 
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white/85 backdrop-blur-xl border-t border-sand-100 px-6 pt-3 pb-7 flex justify-between items-center z-20">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white/85 backdrop-blur-xl border-t border-sand-100 px-3 pt-3 pb-7 flex justify-between items-center z-20">
           {tabs.map(({ to, label, icon: Icon }) => {
-            const active = pathname === to;
+            // "Chats" stays active while viewing a thread under /chat.
+            const active = pathname === to || (to === "/" && pathname.startsWith("/chat"));
             return (
               <Link
                 key={to}
@@ -56,7 +58,7 @@ export function PatientShell({ children, eyebrow = "Good Afternoon", title = "Ma
                 </div>
                 <span
                   className={
-                    "text-[10px] font-semibold uppercase tracking-wider " +
+                    "text-[9.5px] font-semibold uppercase tracking-wide " +
                     (active ? "text-bloom-600" : "text-ink/40")
                   }
                 >
