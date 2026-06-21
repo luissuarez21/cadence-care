@@ -14,7 +14,7 @@ effects; run it as a script to seed:
 
 from __future__ import annotations
 
-from ..ingestion.schema import ProtocolJSON, RiskScore, SymptomLog
+from ..ingestion.schema import EscalationSummary, ProtocolJSON, RiskScore, SymptomLog
 from ..memory import redis_client
 from . import maria_data, panel_data
 
@@ -51,14 +51,59 @@ def seed_panel() -> dict[str, int]:
     return {"patients": len(patients), "symptoms": symptoms_total}
 
 
+# Standing escalations for two already-high-risk panel patients, so the inbox
+# isn't empty next to the red panel rows at demo start. Each mirrors that patient's
+# seeded timeline (see panel_data._NARRATIVES), so the clinical story is consistent
+# and defensible. Maria's escalation is deliberately NOT seeded — it fires LIVE in
+# the demo (BP check-in / safety message), which is the moment we want to show.
+_EVENING = panel_data._TODAY.replace(hour=19, minute=30)
+
+
+def _standing_escalations() -> list[tuple[str, EscalationSummary]]:
+    return [
+        ("priya-anand", EscalationSummary(
+            escalation_id="esc-priya-001",
+            patient_id="priya-anand",
+            patient_name="Priya Anand",
+            timestamp=_EVENING,
+            severity="escalate_urgent",
+            summary="BP 168/114 this evening — severe range — with a new headache and facial swelling.",
+            triggering_readings=["168/114"],
+            pattern_context=["BP in severe range (≥160/110)", "Headache with facial swelling"],
+            recommended_action="Contact patient now; assess for preeclampsia with severe features.",
+        )),
+        ("rosa-martinez", EscalationSummary(
+            escalation_id="esc-rosa-001",
+            patient_id="rosa-martinez",
+            patient_name="Rosa Martinez",
+            timestamp=_EVENING.replace(minute=10),
+            severity="escalate",
+            summary="Two readings at/above 140/90 today (144/92, 141/90) with a mild headache.",
+            triggering_readings=["144/92", "141/90"],
+            pattern_context=["Two elevated BP readings same day"],
+            recommended_action="Contact patient; confirm repeat readings and review for preeclampsia.",
+        )),
+    ]
+
+
+def seed_escalations() -> int:
+    """Write the standing escalations into escalations:{id}. Returns the count."""
+    items = _standing_escalations()
+    for patient_id, escalation in items:
+        redis_client.write_escalation(patient_id, escalation)
+    return len(items)
+
+
 def seed_all() -> dict[str, int]:
-    """Seed Maria + the panel roster — the full demo dataset."""
+    """Seed Maria + the panel roster + standing escalations — the full demo dataset."""
     maria = seed()
     panel = seed_panel()
+    escalations = seed_escalations()
     return {
         "maria_symptoms": maria["symptoms"],
         "panel_patients": panel["patients"],
         "panel_symptoms": panel["symptoms"],
+        "escalations": escalations,
     }
 
 
