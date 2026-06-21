@@ -4,7 +4,7 @@ import { ClipboardCheck, MessageCircle, ShieldAlert, BookOpen, FileText } from "
 
 const tabs = [
   { to: "/checkin", label: "Check-in", icon: ClipboardCheck },
-  { to: "/", label: "Chats", icon: MessageCircle },
+  { to: "/", label: "Cade", icon: MessageCircle },
   { to: "/watchfor", label: "Watch", icon: ShieldAlert },
   { to: "/history", label: "History", icon: BookOpen },
   { to: "/summary", label: "Visit", icon: FileText },
@@ -38,8 +38,11 @@ export function PatientShell({ children, eyebrow = "Good Afternoon", title = "Ma
 
         <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white/85 backdrop-blur-xl border-t border-sand-100 px-3 pt-3 pb-7 flex justify-between items-center z-20">
           {tabs.map(({ to, label, icon: Icon }) => {
-            // "Chats" stays active while viewing a thread under /chat.
-            const active = pathname === to || (to === "/" && pathname.startsWith("/chat"));
+            // The "Cade" tab stays active across the chat surfaces:
+            // the live chat (/), a past thread (/chat), and the list (/chats).
+            const active =
+              pathname === to ||
+              (to === "/" && (pathname.startsWith("/chat") || pathname === "/chats"));
             return (
               <Link
                 key={to}
