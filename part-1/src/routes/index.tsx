@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Send, Heart, ArrowRight, Check } from "lucide-react";
+import { toast } from "sonner";
 import { PatientShell } from "@/components/PatientShell";
+import { api, PATIENT_ID } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,70 +22,81 @@ type Msg = {
   flagged?: boolean;
 };
 
-const initialMessages: Msg[] = [
-  {
-    id: 1,
-    from: "cadence",
-    text: "Good morning, Maria. How are you feeling today? When you're ready, share your blood pressure reading.",
-  },
-];
-
-const scriptedReplies = [
-  {
-    match: /\b(1[3-9]\d|2\d\d)\s*[/\\]\s*(\d{2,3})\b/,
-    cadence:
-      "Thank you for sharing. That reading is a little above your usual range — nothing to worry about. Let's take a deep breath together. Could you rest for a minute and take a second reading?",
-  },
-  {
-    match: /\b(1[3-9]\d|2\d\d)\s*[/\\]\s*(\d{2,3})\b/,
-    cadence:
-      "I appreciate you doing that. Both readings are above the threshold in your care plan, so I've added a summary to your chart. Dr. Reyes will see it today — there's nothing you need to do right now.",
-    flagged: true,
-  },
-];
+const GREETING: Msg = {
+  id: 0,
+  from: "cadence",
+  text: "Good morning, Maria. How are you feeling today? When you're ready, share your blood pressure reading.",
+};
 
 function TodayPage() {
-  const [messages, setMessages] = useState<Msg[]>(initialMessages);
+  const [messages, setMessages] = useState<Msg[]>([GREETING]);
   const [input, setInput] = useState("");
-  const [step, setStep] = useState(0);
   const [typing, setTyping] = useState(false);
+  const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Rehydrate thread from history on mount
+  useEffect(() => {
+    api
+      .get<{ patient_id: string; session_id: string; messages: Array<{ sender: string; text: string; timestamp: string; flagged?: boolean }> }>("/chat/history")
+      .then((res) => {
+        if (res.messages.length > 0) {
+          setMessages(
+            res.messages.map((m, i) => ({
+              id: i,
+              from: m.sender === "cadence" ? "cadence" : "maria",
+              text: m.text,
+              flagged: m.flagged ?? false,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        // Network error — keep the default greeting, don't alert
+      });
+    inputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing]);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
   const flagged = messages.some((m) => m.flagged);
 
-  function handleSend(e: React.FormEvent) {
+  async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text) return;
+    if (!text || sending) return;
+
     const userMsg: Msg = { id: Date.now(), from: "maria", text };
     setMessages((m) => [...m, userMsg]);
     setInput("");
-
-    const reply = scriptedReplies[Math.min(step, scriptedReplies.length - 1)];
-    setStep((s) => s + 1);
-
+    setSending(true);
     setTyping(true);
-    setTimeout(() => {
+
+    try {
+      const res = await api.post<{ reply: string; flagged: boolean; risk?: unknown }>("/chat/message", {
+        patient_id: PATIENT_ID,
+        message: text,
+      });
       setTyping(false);
       setMessages((m) => [
         ...m,
         {
           id: Date.now() + 1,
           from: "cadence",
-          text: reply.cadence,
-          flagged: reply.flagged,
+          text: res.reply,
+          flagged: res.flagged,
         },
       ]);
-    }, 1200);
+    } catch {
+      setTyping(false);
+      setInput(text);
+      toast.error("Couldn't reach Cadence — please try again.");
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -131,7 +144,7 @@ function TodayPage() {
         </div>
       )}
 
-      {/* Quick suggestions */}
+      {/* Quick suggestions — shown early in conversation */}
       {messages.length < 3 && !typing && (
         <div className="flex flex-wrap gap-2 mb-4">
           {["142/91", "Feeling okay", "Mild headache"].map((s) => (
@@ -162,7 +175,7 @@ function TodayPage() {
           />
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || sending}
             className="size-10 rounded-full bg-bloom-500 text-white grid place-items-center disabled:opacity-40 transition-opacity active:scale-95"
           >
             <Send className="size-4" />
