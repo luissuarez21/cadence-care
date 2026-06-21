@@ -162,7 +162,8 @@ function BpRow({
         onChange={(e) => setV(e.target.value)}
         inputMode="text"
         placeholder="120/80"
-        className="w-[68px] text-center bg-white border border-sand-200 rounded-lg px-2 py-1.5 text-[13px] outline-none focus:border-bloom-500/50"
+        /* 16px min font-size prevents iOS Safari auto-zoom on focus */
+        className="w-[80px] text-center bg-white border border-sand-200 rounded-lg px-2 py-1.5 text-[16px] outline-none focus:border-bloom-500/50"
         onKeyDown={(e) => {
           if (e.key === "Enter" && v.trim() && !busy) {
             onLog(v.trim());
