@@ -152,6 +152,23 @@ def test_escalate_push_and_judge_are_safe_noops(store):
     assert esc.escalation_id
 
 
+def test_schedule_followup_persists(monkeypatch):
+    """CAD-34: schedule_followup writes followup:{id} and returns True (no longer a stub)."""
+    saved = {}
+    monkeypatch.setattr(redis_client, "set_followup",
+                        lambda pid, when: saved.update(pid=pid, when=when) or saved)
+    assert tools.schedule_followup(PID, "tomorrow 9am") is True
+    assert saved == {"pid": PID, "when": "tomorrow 9am"}
+
+
+def test_schedule_followup_defaults_blank_when(monkeypatch):
+    saved = {}
+    monkeypatch.setattr(redis_client, "set_followup",
+                        lambda pid, when: saved.update(when=when))
+    tools.schedule_followup(PID, "")
+    assert saved["when"] == "as soon as possible"
+
+
 def test_registry_has_all_seven_tools():
     assert set(tools.TOOL_REGISTRY) == {
         "lookup_plan", "log_symptom", "assess_risk", "detect_pattern",

@@ -133,6 +133,25 @@ def test_action_message_and_note(store, monkeypatch):
     assert pushed[1][0] == redis_client.notes_key("maria-chen")
 
 
+def test_action_book_schedules_followup(store, monkeypatch):
+    """'Book sooner' must persist a follow-up (CAD-34), not just log a note."""
+    saved = {}
+    class _FakeClient:
+        def set(self, key, val):
+            saved[key] = val
+        def rpush(self, key, val):
+            saved.setdefault("_notes", []).append((key, val))
+    monkeypatch.setattr(redis_client, "get_client", lambda: _FakeClient())
+
+    c = _clinician_client()
+    res = c.post("/api/clinician/action", json={"patient_id": "maria-chen", "action": "book", "content": "tomorrow 9am"})
+    assert res.json()["ok"]
+    assert redis_client.followup_key("maria-chen") in saved
+    assert "tomorrow 9am" in saved[redis_client.followup_key("maria-chen")]
+    # book must NOT fall through to the notes path
+    assert "_notes" not in saved
+
+
 # ── WS: live escalation push ─────────────────────────────────────────────────
 
 def test_ws_pushes_published_escalation(store, monkeypatch):

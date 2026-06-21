@@ -164,7 +164,13 @@ async def action(
         )
         return ActionResponse(ok=True, message="Message sent to patient.")
 
-    # note / flag / book → recorded to notes:{id}. (book→schedule_followup is its own story.)
+    if req.action == "book":
+        # Book sooner → adjust the patient's next appointment / check-in (CAD-34).
+        when = req.content or "as soon as possible"
+        tools.schedule_followup(req.patient_id, when)
+        return ActionResponse(ok=True, message=f"Follow-up booked: {when}.")
+
+    # flag / note → recorded to notes:{id}.
     note = f"[{req.action}] {req.content}".strip()
     redis_client.get_client().rpush(redis_client.notes_key(req.patient_id), note)
     return ActionResponse(ok=True, message=f"Recorded '{req.action}' for {req.patient_id}.")
