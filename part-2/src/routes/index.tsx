@@ -1,17 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  Activity, AlertTriangle, Baby, BookOpen, CalendarCheck, CheckCircle2,
+  ChevronRight, Droplets, Eye, Flag, Link2, MessageCircle, Pill,
+  StickyNote, TrendingUp, Utensils, Waves, X,
+} from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { ClinicianSplash } from "@/components/ClinicianSplash";
 import { api, CLINICIAN_ID } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Cadence · Clinician Dashboard" },
-      {
-        name: "description",
-        content:
-          "Cadence clinician dashboard — risk-ranked patient panel, between-visit timeline, pattern detection, and pre-visit briefings for high-risk pregnancy care.",
-      },
+      { title: "Cadence · Clinician Portal" },
+      { name: "description", content: "Cadence clinician dashboard — risk-ranked patient panel, pattern detection, and pre-visit briefings for high-risk pregnancy care." },
     ],
   }),
   component: ClinicianDashboard,
@@ -20,6 +27,9 @@ export const Route = createFileRoute("/")({
 /* ── Types ────────────────────────────────────────────────────────────────── */
 
 type Severity = "ok" | "monitor" | "escalate" | "escalate_urgent";
+type DisplayRisk = "ok" | "monitor" | "escalate";
+type DetailTab = "overview" | "analytics" | "visit" | "timeline";
+type ActionType = "message" | "book" | "flag" | "note";
 
 interface PanelRow {
   patient_id: string;
@@ -166,14 +176,10 @@ function computeAnalytics(timeline: SymptomLog[]): Analytics {
   return { total, elevated, adherence, headacheDays, bpTrend, calendar };
 }
 
-/* purple-tinted drop shadows */
-const shadow = "0 2px 8px -2px oklch(0.52 0.20 305 / 0.14), 0 1px 3px -1px oklch(0.52 0.20 305 / 0.10)";
-const shadowMd = "0 6px 20px -4px oklch(0.52 0.20 305 / 0.20), 0 2px 6px -2px oklch(0.52 0.20 305 / 0.12)";
-
 /* ── Smart inferences ────────────────────────────────────────────────────── */
 
 interface Inference {
-  icon: string;
+  Icon: React.FC<{ className?: string; strokeWidth?: number }>;
   title: string;
   body: string;
   suggestion: string;
@@ -184,27 +190,21 @@ function computeInferences(timeline: SymptomLog[]): Inference[] {
   const headacheDays = timeline.filter((e) => (e.headache_severity ?? 0) > 0).length;
   const missedAspirin = timeline.filter((e) => e.medication_taken === false).length;
   const elevatedBP = timeline.filter((e) => (e.bp_systolic ?? 0) >= 140).length;
-  const swellingFacial = timeline.filter(
-    (e) => e.swelling_location && /face|hand/i.test(e.swelling_location)
-  ).length;
-  const lowMovement = timeline.filter(
-    (e) => e.fetal_movement && /less|decreas/i.test(e.fetal_movement)
-  ).length;
+  const swellingFacial = timeline.filter((e) => e.swelling_location && /face|hand/i.test(e.swelling_location)).length;
+  const lowMovement = timeline.filter((e) => e.fetal_movement && /less|decreas/i.test(e.fetal_movement)).length;
   const visionDays = timeline.filter((e) => e.vision_changes === true).length;
-  const headacheWithBP = timeline.filter(
-    (e) => (e.headache_severity ?? 0) > 0 && (e.bp_systolic ?? 0) >= 130
-  ).length;
+  const headacheWithBP = timeline.filter((e) => (e.headache_severity ?? 0) > 0 && (e.bp_systolic ?? 0) >= 130).length;
 
   if (headacheDays >= 2 && headacheWithBP >= 2) {
     out.push({
-      icon: "🔗",
+      Icon: Link2,
       title: "Headaches correlate with higher-BP days",
-      body: `${headacheDays} headache reports align with elevated BP readings — may indicate cerebral vasospasm rather than a tension headache.`,
+      body: `${headacheDays} headache reports align with elevated BP readings — may indicate cerebral vasospasm rather than tension headache.`,
       suggestion: "Ask about headache location (frontal vs. occipital) and whether onset follows activity or rest.",
     });
   } else if (headacheDays >= 2) {
     out.push({
-      icon: "💧",
+      Icon: Droplets,
       title: "Recurring headaches — check hydration",
       body: `Headaches on ${headacheDays} of ${timeline.length} logged days. Dehydration is a common non-BP trigger in pregnancy, especially if she's limiting fluids to reduce swelling.`,
       suggestion: "Ask how much water she drinks and whether she's been avoiding fluids intentionally.",
@@ -213,23 +213,23 @@ function computeInferences(timeline: SymptomLog[]): Inference[] {
 
   if (missedAspirin >= 2 && elevatedBP >= 2) {
     out.push({
-      icon: "⚠",
+      Icon: AlertTriangle,
       title: "Missed aspirin + elevated BP — review dosing",
       body: `${missedAspirin} missed aspirin doses alongside ${elevatedBP} elevated readings. Consistent daily dosing is critical for the platelet effect that reduces preeclampsia risk.`,
-      suggestion: "Consider whether 81mg remains appropriate or if 162mg is indicated per MFM consult guidelines.",
+      suggestion: "Consider whether 81 mg remains appropriate or if 162 mg is indicated per MFM consult guidelines.",
     });
   } else if (missedAspirin >= 2) {
     out.push({
-      icon: "💊",
+      Icon: Pill,
       title: "Aspirin adherence gaps",
-      body: `Low-dose aspirin was skipped ${missedAspirin} times. Platelets turn over every ~10 days — inconsistent dosing erodes the antiplatelet effect that protects her.`,
+      body: `Low-dose aspirin was skipped ${missedAspirin} times. Platelets turn over every ~10 days — inconsistent dosing erodes the antiplatelet effect.`,
       suggestion: "Link it to a fixed daily cue (same meal, toothbrushing). Ask what's getting in the way.",
     });
   }
 
-  if (elevatedBP >= 2 && !out.find((i) => i.icon === "⚠")) {
+  if (elevatedBP >= 2 && !out.find((i) => i.Icon === AlertTriangle)) {
     out.push({
-      icon: "🧂",
+      Icon: Utensils,
       title: "Dietary sodium worth exploring",
       body: `${elevatedBP} elevated readings this period. Transient spikes are often diet-driven — restaurant meals and processed foods can add 15–20 mmHg.`,
       suggestion: "Ask about recent meals, dining out frequency, and any dietary changes in the past 2 weeks.",
@@ -238,42 +238,48 @@ function computeInferences(timeline: SymptomLog[]): Inference[] {
 
   if (swellingFacial >= 1) {
     out.push({
-      icon: "🫧",
+      Icon: Waves,
       title: "Facial or hand swelling pattern",
       body: "Facial or hand swelling (not just ankles) alongside BP elevation is a distinct preeclampsia pattern — unlike typical pregnancy-related foot swelling.",
-      suggestion: "Ask if she notices puffiness in the morning or after lying down — more diagnostic than end-of-day ankle swelling.",
+      suggestion: "Ask if she notices puffiness in the morning or after lying down — more diagnostic than end-of-day swelling.",
     });
   }
 
   if (lowMovement >= 1) {
     out.push({
-      icon: "👶",
+      Icon: Baby,
       title: "Fetal movement change — confirm counting method",
       body: "Patient reported reduced fetal movement. Reliability depends on whether she uses a consistent kick count method and knows her baseline.",
-      suggestion: "Ask: rested during the count? Cold drink + left-side lie-down? What baseline feels like for her specifically.",
+      suggestion: "Ask: rested during the count? Cold drink + left-side lie-down? What baseline feels like for her.",
     });
   }
 
   if (visionDays >= 1) {
     out.push({
-      icon: "👁",
+      Icon: Eye,
       title: "Visual changes — eclampsia precursor flag",
       body: "Any report of spots, flashing lights, or blurring alongside elevated BP significantly raises impending eclampsia risk.",
-      suggestion: "Verify at appointment: visual acuity baseline, and consider fundoscopic exam if available.",
+      suggestion: "Verify at appointment: visual acuity baseline and consider fundoscopic exam if available.",
     });
   }
 
   return out.slice(0, 4);
 }
 
-/* care plan coaching topics from preeclampsia_risk.json */
+/* ── Care plan reminders ─────────────────────────────────────────────────── */
+
 const CARE_PLAN_REMINDERS = [
   "Take low-dose aspirin at the same time daily",
   "BP: seated, rested, arm at heart level — two readings, 4 hrs apart",
   "Reduce dietary sodium and stay well hydrated",
   "Count fetal kicks daily — note any drop from baseline",
-  "Report severe headache + vision changes (spots, blur, flashing) immediately",
+  "Report severe headache + vision changes immediately",
 ];
+
+/* ── Drop shadows ────────────────────────────────────────────────────────── */
+
+const shadow = "0 2px 8px -2px oklch(0.52 0.20 305 / 0.14), 0 1px 3px -1px oklch(0.52 0.20 305 / 0.10)";
+const shadowMd = "0 6px 20px -4px oklch(0.52 0.20 305 / 0.18), 0 2px 6px -2px oklch(0.52 0.20 305 / 0.10)";
 
 const BASE_WS = (import.meta.env.VITE_API_URL as string | undefined)
   ?.replace(/^http/, "ws") ?? "ws://localhost:8000";
@@ -310,7 +316,7 @@ function ClinicianDashboard() {
       try {
         const esc: EscalationSummary = JSON.parse(e.data);
         setEscalations((prev) => [esc, ...prev]);
-      } catch { /* ignore malformed frames */ }
+      } catch { /* ignore malformed */ }
     };
     return () => ws.close();
   }, []);
@@ -328,73 +334,195 @@ function ClinicianDashboard() {
   const newEscalations = escalations.filter((e) => !e.acknowledged).length;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <TopBar view={view} onView={setView} newEscalations={newEscalations} />
+    <>
+      <ClinicianSplash loading={panelLoading} />
+      <div className="min-h-screen bg-background flex flex-col">
+        <TopBar view={view} onView={setView} newEscalations={newEscalations} />
 
-      {view === "panel" ? (
-        <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
-          <aside className="bg-sidebar border-r border-border/60 flex flex-col overflow-hidden">
-            <PanelHeader rows={rows} />
-            <div className="flex-1 overflow-y-auto">
-              {panelLoading ? (
-                <div className="p-3 space-y-2">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="h-[72px] rounded-xl bg-primary/10 animate-pulse" />
-                  ))}
-                </div>
-              ) : rows.length === 0 ? (
-                <p className="px-4 py-8 text-sm text-muted-foreground text-center">No patients assigned.</p>
-              ) : (
-                <ul className="p-2 space-y-1">
-                  {rows.map((row) => (
-                    <PatientRow
-                      key={row.patient_id}
-                      row={row}
-                      active={row.patient_id === selectedId}
-                      onSelect={() => setSelectedId(row.patient_id)}
-                    />
-                  ))}
-                </ul>
-              )}
-            </div>
-          </aside>
-
-          {/* Main detail */}
-          <main className="bg-background overflow-y-auto">
-            {detailLoading ? (
-              <DetailSkeleton />
-            ) : detail ? (
-              <PatientDetail detail={detail} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full min-h-64 gap-2">
-                <div className="text-3xl">🌸</div>
-                <p className="text-sm text-muted-foreground">Select a patient to view details.</p>
+        {view === "panel" ? (
+          <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
+            <aside className="bg-sidebar border-r border-border/60 flex flex-col overflow-hidden">
+              <PanelHeader rows={rows} />
+              <div className="flex-1 overflow-y-auto">
+                {panelLoading ? (
+                  <div className="p-3 space-y-2">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="h-[72px] rounded-xl bg-primary/8 animate-pulse" />
+                    ))}
+                  </div>
+                ) : rows.length === 0 ? (
+                  <p className="px-4 py-8 text-sm text-muted-foreground text-center">No patients assigned.</p>
+                ) : (
+                  <ul className="p-2 space-y-0.5">
+                    {rows.map((row) => (
+                      <PatientRow
+                        key={row.patient_id}
+                        row={row}
+                        active={row.patient_id === selectedId}
+                        onSelect={() => setSelectedId(row.patient_id)}
+                      />
+                    ))}
+                  </ul>
+                )}
               </div>
-            )}
-          </main>
-        </div>
-      ) : (
-        <EscalationsInbox
-          items={escalations}
-          onAck={(id) => setEscalations((es) => es.map((e) => e.escalation_id === id ? { ...e, acknowledged: true } : e))}
-          onOpenPatient={(pid) => { setSelectedId(pid); setView("panel"); }}
-        />
-      )}
-    </div>
+            </aside>
+
+            <main className="bg-background overflow-y-auto">
+              {detailLoading ? (
+                <DetailSkeleton />
+              ) : detail ? (
+                <PatientDetailView detail={detail} />
+              ) : !panelLoading ? (
+                <div className="flex flex-col items-center justify-center h-full min-h-64 gap-3">
+                  <img src="/icon-512.png" alt="" className="w-12 h-12 rounded-xl opacity-30" />
+                  <p className="text-sm text-muted-foreground">Select a patient to view details.</p>
+                </div>
+              ) : null}
+            </main>
+          </div>
+        ) : (
+          <EscalationsInbox
+            items={escalations}
+            onAck={(id) => setEscalations((es) => es.map((e) => e.escalation_id === id ? { ...e, acknowledged: true } : e))}
+            onOpenPatient={(pid) => { setSelectedId(pid); setView("panel"); }}
+          />
+        )}
+      </div>
+    </>
   );
 }
 
 function DetailSkeleton() {
   return (
-    <div className="p-4 space-y-3">
-      <div className="h-24 rounded-xl bg-primary/8 animate-pulse" />
+    <div className="p-5 space-y-3">
+      <div className="h-14 rounded-xl bg-primary/8 animate-pulse" />
       <div className="grid grid-cols-4 gap-3">
         {[...Array(4)].map((_, i) => <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />)}
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {[...Array(4)].map((_, i) => <div key={i} className="h-36 rounded-xl bg-muted animate-pulse" />)}
+        {[...Array(4)].map((_, i) => <div key={i} className="h-32 rounded-xl bg-muted animate-pulse" />)}
       </div>
     </div>
+  );
+}
+
+/* ── Action dialog ────────────────────────────────────────────────────────── */
+
+const ACTION_CONFIG: Record<ActionType, {
+  title: string;
+  description: string;
+  placeholder: string;
+  submitLabel: string;
+  Icon: React.FC<{ className?: string }>;
+  multiline?: boolean;
+}> = {
+  message: {
+    title: "Message patient",
+    description: "Sent securely via Poke — no PHI on carrier networks.",
+    placeholder: "Type your message to the patient…",
+    submitLabel: "Send message",
+    Icon: MessageCircle,
+    multiline: true,
+  },
+  book: {
+    title: "Book sooner",
+    description: "Override the scheduled appointment with an earlier slot.",
+    placeholder: "When? (e.g. Tomorrow morning, ASAP, June 25th at 10am)",
+    submitLabel: "Book appointment",
+    Icon: CalendarCheck,
+  },
+  flag: {
+    title: "Flag for nurse review",
+    description: "Add context so the nurse knows what to prioritize.",
+    placeholder: "Reason or context for the nurse (optional)…",
+    submitLabel: "Flag patient",
+    Icon: Flag,
+    multiline: true,
+  },
+  note: {
+    title: "Add a clinical note",
+    description: "Saved to the patient's record in Cadence.",
+    placeholder: "Write your note…",
+    submitLabel: "Save note",
+    Icon: StickyNote,
+    multiline: true,
+  },
+};
+
+interface ActionDialogProps {
+  action: ActionType | null;
+  patientName: string;
+  onClose: () => void;
+  onSubmit: (action: ActionType, content: string) => Promise<void>;
+}
+
+function ActionDialog({ action, patientName, onClose, onSubmit }: ActionDialogProps) {
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const cfg = action ? ACTION_CONFIG[action] : null;
+
+  async function handleSubmit() {
+    if (!action || !cfg) return;
+    const content = value.trim() || cfg.placeholder;
+    setLoading(true);
+    try {
+      await onSubmit(action, content);
+      setValue("");
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={action !== null} onOpenChange={(o) => { if (!o) { setValue(""); onClose(); } }}>
+      <DialogContent className="max-w-md">
+        {cfg && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <cfg.Icon className="w-4 h-4 text-primary" />
+                {cfg.title}
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">{patientName} · {cfg.description}</p>
+            </DialogHeader>
+
+            <div className="py-1">
+              {cfg.multiline ? (
+                <Textarea
+                  autoFocus
+                  rows={4}
+                  placeholder={cfg.placeholder}
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  className="resize-none text-sm"
+                />
+              ) : (
+                <Input
+                  autoFocus
+                  placeholder={cfg.placeholder}
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                  className="text-sm"
+                />
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Btn onClick={() => { setValue(""); onClose(); }}>Cancel</Btn>
+              <Btn
+                variant="primary"
+                onClick={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? "Saving…" : cfg.submitLabel}
+              </Btn>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -407,7 +535,7 @@ function TopBar({ view, onView, newEscalations }: {
     <header className="h-14 px-5 flex items-center gap-5 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
       <CadenceLogo />
 
-      <nav className="flex items-center gap-0.5">
+      <nav className="flex items-center gap-0.5 ml-2">
         <NavBtn active={view === "panel"} onClick={() => onView("panel")}>Patients</NavBtn>
         <NavBtn active={view === "escalations"} onClick={() => onView("escalations")}>
           <span className="flex items-center gap-1.5">
@@ -452,19 +580,11 @@ function NavBtn({ children, active, onClick }: {
 function CadenceLogo() {
   return (
     <div className="flex items-center gap-2.5 shrink-0">
-      {/* Bunny circle logo */}
-      <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center shrink-0">
-        <svg width="22" height="24" viewBox="0 0 22 24" fill="none" aria-hidden>
-          {/* left ear */}
-          <path d="M6.5 11 C6.5 11 4 5 5.5 2.5 C6.5 0.5 9 1.5 9 4.5 L9 11" fill="white" fillOpacity="0.95" />
-          {/* right ear */}
-          <path d="M15.5 11 C15.5 11 18 5 16.5 2.5 C15.5 0.5 13 1.5 13 4.5 L13 11" fill="white" fillOpacity="0.95" />
-          {/* head */}
-          <circle cx="11" cy="16.5" r="6.5" fill="white" />
-          {/* nose */}
-          <ellipse cx="11" cy="17.5" rx="1.2" ry="0.9" fill="oklch(0.52 0.20 305 / 0.4)" />
-        </svg>
-      </div>
+      <img
+        src="/icon-512.png"
+        alt="Cadence"
+        className="w-8 h-8 rounded-xl object-cover shadow-sm"
+      />
       <div className="leading-tight select-none">
         <div className="font-display text-sm font-semibold text-foreground tracking-tight">Cadence</div>
         <div className="text-[9px] text-muted-foreground font-semibold tracking-widest uppercase">Clinician</div>
@@ -491,14 +611,14 @@ function PanelHeader({ rows }: { rows: PanelRow[] }) {
   const ok = rows.length - esc - mon;
 
   return (
-    <div className="px-4 pt-4 pb-3 border-b border-border/60 shrink-0">
+    <div className="px-4 pt-4 pb-3 border-b border-border/50 shrink-0">
       <div className="flex items-center justify-between mb-2.5">
-        <h2 className="font-display text-base font-semibold text-foreground">My Patients</h2>
-        <span className="h-5 px-2 inline-flex items-center rounded-full bg-primary/15 text-primary text-[11px] font-bold tabular-nums">
+        <h2 className="font-display text-sm font-semibold text-foreground">My Patients</h2>
+        <span className="h-5 px-2 inline-flex items-center rounded-full bg-primary/12 text-primary text-[11px] font-bold tabular-nums">
           {rows.length}
         </span>
       </div>
-      <div className="flex items-center gap-2 text-[11px] flex-wrap">
+      <div className="flex items-center gap-1.5 text-[11px] flex-wrap">
         <PillStat color="bg-risk-escalate" label={`${esc} escalate`} textColor="text-risk-escalate" />
         <PillStat color="bg-risk-monitor" label={`${mon} monitor`} textColor="text-risk-monitor" />
         <PillStat color="bg-risk-ok" label={`${ok} on track`} textColor="text-risk-ok" />
@@ -509,7 +629,7 @@ function PanelHeader({ rows }: { rows: PanelRow[] }) {
 
 function PillStat({ color, label, textColor }: { color: string; label: string; textColor: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface/60 border border-border/50 font-semibold ${textColor}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface border border-border/60 font-semibold ${textColor}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
       {label}
     </span>
@@ -520,15 +640,12 @@ function PatientRow({ row, active, onSelect }: {
   row: PanelRow; active: boolean; onSelect: () => void;
 }) {
   const sev: DisplayRisk = row.severity === "escalate_urgent" ? "escalate" : (row.severity as DisplayRisk);
-
   return (
     <li>
       <button
         onClick={onSelect}
         className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 transition-all duration-150 active:scale-[0.98] ${
-          active
-            ? "bg-surface text-foreground"
-            : "hover:bg-surface/70 hover:translate-x-0.5"
+          active ? "bg-surface" : "hover:bg-surface/70 hover:translate-x-0.5"
         }`}
         style={active ? { boxShadow: shadow } : undefined}
       >
@@ -545,8 +662,6 @@ function PatientRow({ row, active, onSelect }: {
     </li>
   );
 }
-
-type DisplayRisk = "ok" | "monitor" | "escalate";
 
 function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean }) {
   const map: Record<DisplayRisk, { label: string; bg: string; fg: string }> = {
@@ -567,25 +682,16 @@ function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean
 
 /* ── Patient detail ───────────────────────────────────────────────────────── */
 
-type DetailTab = "overview" | "analytics" | "visit" | "timeline";
-
-function PatientDetail({ detail }: { detail: PatientDetail }) {
+function PatientDetailView({ detail }: { detail: PatientDetail }) {
   const [tab, setTab] = useState<DetailTab>("overview");
+  const [activeAction, setActiveAction] = useState<ActionType | null>(null);
 
-  async function runAction(action: "message" | "book" | "flag" | "note", content: string) {
-    try {
-      const res = await api.post<{ ok: boolean; message: string }>("/clinician/action", {
-        patient_id: detail.patient_id, action, content,
-      });
-      toast.success(res.message);
-    } catch (err) {
-      toast.error(`Couldn't ${action}: ${(err as Error).message}`);
-    }
+  async function runAction(action: ActionType, content: string) {
+    const res = await api.post<{ ok: boolean; message: string }>("/clinician/action", {
+      patient_id: detail.patient_id, action, content,
+    });
+    toast.success(res.message);
   }
-
-  const onMessage = () => { const t = window.prompt(`Message to ${detail.patient_name}`); if (t) runAction("message", t); };
-  const onBook = () => { const w = window.prompt("Book follow-up for when?", "as soon as possible"); if (w !== null) runAction("book", w); };
-  const onNote = () => { const n = window.prompt(`Add a note for ${detail.patient_name}`); if (n) runAction("note", n); };
 
   const sev: DisplayRisk =
     detail.current_risk?.severity === "escalate_urgent"
@@ -599,100 +705,108 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
   const analytics = computeAnalytics(detail.timeline);
   const inferences = computeInferences(detail.timeline);
 
-  const tabs: { id: DetailTab; label: string; badge?: number }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "analytics", label: "Analytics" },
-    { id: "visit", label: "Visit prep" },
-    { id: "timeline", label: "Timeline", badge: detail.timeline.length },
+  const tabs: { id: DetailTab; label: string; Icon: React.FC<{ className?: string }>; badge?: number }[] = [
+    { id: "overview", label: "Overview", Icon: Activity },
+    { id: "analytics", label: "Analytics", Icon: TrendingUp },
+    { id: "visit", label: "Visit prep", Icon: BookOpen },
+    { id: "timeline", label: "Timeline", Icon: CalendarCheck, badge: detail.timeline.length },
   ];
 
   return (
-    <div className="flex flex-col h-full">
-      {/* ── Sticky header ── */}
-      <div className="sticky top-0 z-10 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
-        {/* Patient identity + actions */}
-        <div className="px-5 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Avatar name={detail.patient_name} />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-base font-display font-semibold truncate">{detail.patient_name}</h1>
-                <RiskBadge risk={sev} />
-                {detail.current_risk && (
-                  <span className="text-[11px] text-muted-foreground">
-                    assessed {fmtTime(detail.current_risk.timestamp)}
-                  </span>
-                )}
+    <>
+      <ActionDialog
+        action={activeAction}
+        patientName={detail.patient_name}
+        onClose={() => setActiveAction(null)}
+        onSubmit={runAction}
+      />
+
+      <div className="flex flex-col h-full">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-10 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
+          <div className="px-5 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar name={detail.patient_name} />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-base font-display font-semibold truncate">{detail.patient_name}</h1>
+                  <RiskBadge risk={sev} />
+                  {detail.current_risk && (
+                    <span className="text-[11px] text-muted-foreground">
+                      assessed {fmtTime(detail.current_risk.timestamp)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ActionBtn icon={MessageCircle} label="Message" onClick={() => setActiveAction("message")} />
+              <ActionBtn icon={CalendarCheck} label="Book sooner" onClick={() => setActiveAction("book")} />
+              <ActionBtn icon={Flag} label="Flag" onClick={() => setActiveAction("flag")} />
+              <Btn variant="primary" onClick={() => setActiveAction("note")}>
+                <StickyNote className="w-3.5 h-3.5 mr-1.5" />
+                Add note
+              </Btn>
+            </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Btn onClick={onMessage}>Message</Btn>
-            <Btn onClick={onBook}>Book sooner</Btn>
-            <Btn onClick={() => runAction("flag", "Flagged for nurse review")}>Flag</Btn>
-            <Btn variant="primary" onClick={onNote}>Add note</Btn>
+
+          {/* Tab bar */}
+          <div className="px-5 flex items-center gap-0 border-t border-border/40">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors duration-100 ${
+                  tab === t.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <t.Icon className="w-3.5 h-3.5" />
+                {t.label}
+                {t.badge !== undefined && t.badge > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-primary/12 text-primary text-[9px] font-bold tabular-nums">
+                    {t.badge}
+                  </span>
+                )}
+                {tab === t.id && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t-full" />
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Tab bar */}
-        <div className="px-5 flex items-center gap-0.5 border-t border-border/40">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`relative flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors duration-100 ${
-                tab === t.id
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t.label}
-              {t.badge !== undefined && t.badge > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-primary/12 text-primary text-[9px] font-bold tabular-nums">
-                  {t.badge}
-                </span>
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto">
+          {detail.timeline.length === 0 && !detail.visit_summary && tab !== "visit" ? (
+            <div className="m-5 rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-6 py-12 text-center">
+              <img src="/icon-512.png" alt="" className="w-10 h-10 rounded-xl mx-auto mb-3 opacity-40" />
+              <p className="text-sm text-muted-foreground">No check-in data yet for {detail.patient_name}.</p>
+            </div>
+          ) : (
+            <div className="p-5">
+              {tab === "overview" && (
+                <OverviewTab detail={detail} sev={sev} score={score} analytics={analytics} inferences={inferences} />
               )}
-              {tab === t.id && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t-full" />
+              {tab === "analytics" && (
+                <AnalyticsTab bp={bp} analytics={analytics} patterns={detail.patterns} />
               )}
-            </button>
-          ))}
+              {tab === "visit" && (
+                <VisitPrepTab
+                  sev={sev} score={score}
+                  recommendedAction={detail.current_risk?.recommended_action ?? null}
+                  triggeredFlags={detail.current_risk?.triggered_flags ?? []}
+                  starters={starters} briefing={briefing}
+                  rationale={detail.current_risk?.rationale ?? null}
+                  adherence={analytics.adherence}
+                />
+              )}
+              {tab === "timeline" && <TimelineTab timeline={detail.timeline} />}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* ── Tab content ── */}
-      <div className="flex-1 overflow-y-auto">
-        {detail.timeline.length === 0 && !detail.visit_summary && tab !== "visit" ? (
-          <div className="m-5 rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-6 py-12 text-center">
-            <p className="text-sm text-muted-foreground">No check-in data yet for {detail.patient_name}.</p>
-          </div>
-        ) : (
-          <div className="p-5">
-            {tab === "overview" && (
-              <OverviewTab detail={detail} sev={sev} score={score} analytics={analytics} inferences={inferences} />
-            )}
-            {tab === "analytics" && (
-              <AnalyticsTab bp={bp} analytics={analytics} patterns={detail.patterns} />
-            )}
-            {tab === "visit" && (
-              <VisitPrepTab
-                sev={sev}
-                score={score}
-                recommendedAction={detail.current_risk?.recommended_action ?? null}
-                triggeredFlags={detail.current_risk?.triggered_flags ?? []}
-                starters={starters}
-                briefing={briefing}
-                rationale={detail.current_risk?.rationale ?? null}
-                adherence={analytics.adherence}
-              />
-            )}
-            {tab === "timeline" && (
-              <TimelineTab timeline={detail.timeline} />
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -703,16 +817,15 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
   sev: DisplayRisk;
   score: number;
   analytics: Analytics;
-  inferences: ReturnType<typeof computeInferences>;
+  inferences: Inference[];
 }) {
   return (
     <div className="space-y-4 max-w-4xl">
-      {/* Risk + key stats row */}
+      {/* Risk + key stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Risk card */}
         <div className="col-span-2 lg:col-span-1 rounded-2xl border border-border bg-surface p-4" style={{ boxShadow: shadow }}>
           <SectionLabel>Risk level</SectionLabel>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 mb-2">
             <RiskBadge risk={sev} />
           </div>
           <RiskMeter score={score} />
@@ -720,7 +833,6 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
             {detail.current_risk?.rationale ?? "No assessment yet."}
           </p>
         </div>
-
         <AnalyticCard label="Check-ins" value={String(analytics.total)} sub="this period" color="text-primary" />
         <AnalyticCard
           label="BP elevated"
@@ -753,12 +865,14 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
                 className="rounded-xl border border-border bg-surface p-3.5 flex gap-3 transition-all duration-150 hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-px"
                 style={{ boxShadow: shadow }}
               >
-                <div className="text-xl shrink-0 mt-0.5">{inf.icon}</div>
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <inf.Icon className="w-4 h-4 text-primary" strokeWidth={2} />
+                </div>
                 <div className="min-w-0">
                   <div className="text-sm font-semibold leading-snug">{inf.title}</div>
                   <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{inf.body}</div>
                   <div className="mt-2 flex items-start gap-1.5">
-                    <span className="text-primary shrink-0 mt-[2px] text-[10px]">→</span>
+                    <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-[2px]" />
                     <span className="text-xs text-primary font-medium leading-relaxed">{inf.suggestion}</span>
                   </div>
                 </div>
@@ -778,7 +892,7 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
               const dotCls = psev === "escalate" ? "bg-risk-escalate" : psev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
               return (
                 <li key={p.title} className="flex items-start gap-2.5 p-3 rounded-xl border border-border bg-background">
-                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
+                  <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
                   <div>
                     <div className="text-sm font-semibold">{p.title}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{p.detail}</div>
@@ -788,6 +902,13 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
             })}
           </ul>
         </Card>
+      )}
+
+      {detail.patterns.length === 0 && inferences.length === 0 && (
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-risk-ok-bg bg-risk-ok-bg/40">
+          <CheckCircle2 className="w-4 h-4 text-risk-ok shrink-0" />
+          <p className="text-sm text-risk-ok font-medium">No concerning patterns detected in this period.</p>
+        </div>
       )}
     </div>
   );
@@ -802,13 +923,12 @@ function AnalyticsTab({ bp, analytics, patterns }: {
 }) {
   return (
     <div className="space-y-4 max-w-4xl">
-      {/* 4 stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <AnalyticCard label="Total check-ins" value={String(analytics.total)} sub="this period" color="text-primary" />
         <AnalyticCard
           label="BP elevated"
           value={String(analytics.elevated)}
-          sub={`≥140 systolic`}
+          sub="≥140 systolic"
           color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
         />
         <AnalyticCard
@@ -826,11 +946,10 @@ function AnalyticsTab({ bp, analytics, patterns }: {
         />
       </div>
 
-      {/* BP trend + calendar side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <CardTitle>Blood pressure trend · {bp.length} readings</CardTitle>
+            <CardTitle>Blood pressure · {bp.length} readings</CardTitle>
             <BPTrendChip trend={analytics.bpTrend} />
           </div>
           {bp.length > 0 ? (
@@ -851,29 +970,26 @@ function AnalyticsTab({ bp, analytics, patterns }: {
           <CardTitle>7-day activity</CardTitle>
           <div className="mt-3 space-y-2">
             {analytics.calendar.map((d, i) => (
-              <div key={i} className="flex items-center gap-2.5">
+              <div key={i} className="flex items-center gap-2">
                 <span className="text-[11px] text-muted-foreground w-5 shrink-0">{d.day}</span>
                 <div className="flex-1 h-5 rounded-md bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-md transition-all ${
-                      d.flagged ? "bg-primary/80 w-full" : d.checked ? "bg-primary/35 w-full" : "w-0"
-                    }`}
-                  />
+                  <div className={`h-full rounded-md transition-all ${
+                    d.flagged ? "bg-primary/80 w-full" : d.checked ? "bg-primary/35 w-full" : "w-0"
+                  }`} />
                 </div>
                 <span className="text-[10px] text-muted-foreground w-14 shrink-0 text-right">
-                  {d.flagged ? "Elevated BP" : d.checked ? "Check-in" : "No data"}
+                  {d.flagged ? "Elevated" : d.checked ? "Check-in" : "—"}
                 </span>
               </div>
             ))}
           </div>
-          <div className="mt-3 pt-3 border-t border-border flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/80 inline-block" /> Elevated</span>
+          <div className="mt-3 pt-3 border-t border-border flex items-center gap-3 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/80 inline-block" /> Elevated BP</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/35 inline-block" /> Check-in</span>
           </div>
         </Card>
       </div>
 
-      {/* Patterns */}
       {patterns.length > 0 && (
         <Card className="p-4">
           <CardTitle>Detected patterns</CardTitle>
@@ -883,7 +999,7 @@ function AnalyticsTab({ bp, analytics, patterns }: {
               const dotCls = psev === "escalate" ? "bg-risk-escalate" : psev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
               return (
                 <li key={p.title} className="flex items-start gap-2.5 p-3 rounded-xl border border-border bg-background">
-                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
+                  <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
                   <div>
                     <div className="text-sm font-semibold">{p.title}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{p.detail}</div>
@@ -901,18 +1017,13 @@ function AnalyticsTab({ bp, analytics, patterns }: {
 /* ── Tab: Visit prep ──────────────────────────────────────────────────────── */
 
 function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters, briefing, rationale, adherence }: {
-  sev: DisplayRisk;
-  score: number;
-  recommendedAction: string | null;
-  triggeredFlags: string[];
-  starters: string[];
-  briefing: string;
-  rationale: string | null;
-  adherence: number | null;
+  sev: DisplayRisk; score: number;
+  recommendedAction: string | null; triggeredFlags: string[];
+  starters: string[]; briefing: string;
+  rationale: string | null; adherence: number | null;
 }) {
   return (
     <div className="space-y-4 max-w-3xl">
-      {/* Immediate action — prominent */}
       <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5" style={{ boxShadow: shadow }}>
         <SectionLabel>Immediate action</SectionLabel>
         <p className="text-sm leading-relaxed font-medium">
@@ -929,7 +1040,6 @@ function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters,
         )}
       </div>
 
-      {/* 2-col: starters + reminders */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4">
           <SectionLabel>Before the visit, ask</SectionLabel>
@@ -962,7 +1072,6 @@ function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters,
         </Card>
       </div>
 
-      {/* Pre-visit briefing */}
       {briefing && (
         <Card className="p-4">
           <SectionLabel>Pre-visit briefing</SectionLabel>
@@ -970,7 +1079,6 @@ function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters,
         </Card>
       )}
 
-      {/* Risk summary */}
       <Card className="p-4">
         <SectionLabel>Risk summary</SectionLabel>
         <div className="flex items-center gap-3 mb-2">
@@ -997,73 +1105,57 @@ function VisitPrepTab({ sev, score, recommendedAction, triggeredFlags, starters,
 function TimelineTab({ timeline }: { timeline: SymptomLog[] }) {
   const sorted = [...timeline].reverse();
   return (
-    <div className="max-w-2xl space-y-1">
+    <div className="max-w-2xl">
       {sorted.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">No check-ins logged yet.</p>
       ) : (
-        sorted.map((e, i) => {
-          const flagged = (e.bp_systolic ?? 0) >= 140;
-          const hasHeadache = (e.headache_severity ?? 0) > 0;
-          const bp = e.bp_systolic != null ? `${e.bp_systolic}/${e.bp_diastolic}` : null;
-          const summary = e.raw_text ?? (bp ? `BP ${bp}` : "Check-in");
-          return (
-            <div
-              key={i}
-              className={`relative flex gap-4 pb-4 ${i < sorted.length - 1 ? "border-b border-border/50" : ""}`}
-            >
-              {/* Timeline spine */}
-              <div className="flex flex-col items-center shrink-0 pt-0.5">
-                <div className={`w-2.5 h-2.5 rounded-full ring-2 ring-surface ${flagged ? "bg-risk-escalate" : hasHeadache ? "bg-risk-monitor" : "bg-border-strong"}`} />
-                {i < sorted.length - 1 && <div className="w-px flex-1 bg-border/60 mt-1.5" />}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0 pt-0 pb-2">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{summary}</div>
-                    {bp && e.raw_text && (
-                      <div className="text-xs text-muted-foreground mt-0.5">BP {bp}</div>
-                    )}
-                    {e.notes && (
-                      <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{e.notes}</div>
-                    )}
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {e.headache_severity != null && e.headache_severity > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border font-medium">
-                          Headache {e.headache_severity}/10
-                        </span>
-                      )}
-                      {e.swelling_location && e.swelling_location !== "none" && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border font-medium">
-                          Swelling: {e.swelling_location}
-                        </span>
-                      )}
-                      {e.vision_changes === true && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-risk-monitor-bg text-risk-monitor border border-risk-monitor/20 font-medium">
-                          Vision changes
-                        </span>
-                      )}
-                      {e.fetal_movement && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border font-medium">
-                          Movement: {e.fetal_movement}
-                        </span>
-                      )}
-                      {e.medication_taken === false && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-border text-muted-foreground font-medium">
-                          Aspirin missed
-                        </span>
-                      )}
+        <div className="space-y-0">
+          {sorted.map((e, i) => {
+            const flagged = (e.bp_systolic ?? 0) >= 140;
+            const hasHeadache = (e.headache_severity ?? 0) > 0;
+            const bp = e.bp_systolic != null ? `${e.bp_systolic}/${e.bp_diastolic}` : null;
+            const summary = e.raw_text ?? (bp ? `BP ${bp}` : "Check-in");
+            return (
+              <div key={i} className="relative flex gap-4">
+                <div className="flex flex-col items-center shrink-0 pt-1.5">
+                  <div className={`w-2.5 h-2.5 rounded-full ring-2 ring-surface z-10 ${
+                    flagged ? "bg-risk-escalate" : hasHeadache ? "bg-risk-monitor" : "bg-border-strong"
+                  }`} />
+                  {i < sorted.length - 1 && <div className="w-px flex-1 bg-border/60 mt-1" />}
+                </div>
+                <div className={`flex-1 min-w-0 pb-4 ${i < sorted.length - 1 ? "" : ""}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium leading-snug">{summary}</div>
+                      {bp && e.raw_text && <div className="text-xs text-muted-foreground mt-0.5">BP {bp}</div>}
+                      {e.notes && <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{e.notes}</div>}
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {e.headache_severity != null && e.headache_severity > 0 && (
+                          <Chip>{`Headache ${e.headache_severity}/10`}</Chip>
+                        )}
+                        {e.swelling_location && e.swelling_location !== "none" && (
+                          <Chip>{`Swelling: ${e.swelling_location}`}</Chip>
+                        )}
+                        {e.vision_changes === true && (
+                          <Chip warn>Vision changes</Chip>
+                        )}
+                        {e.fetal_movement && (
+                          <Chip>{`Movement: ${e.fetal_movement}`}</Chip>
+                        )}
+                        {e.medication_taken === false && (
+                          <Chip>Aspirin missed</Chip>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums whitespace-nowrap pt-0.5">
-                    {fmtDate(e.timestamp)}
+                    <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums whitespace-nowrap pt-0.5">
+                      {fmtDate(e.timestamp)}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1077,29 +1169,29 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
   onOpenPatient: (pid: string) => void;
 }) {
   const unread = items.filter((e) => !e.acknowledged).length;
-  const acked = items.filter((e) => e.acknowledged).length;
 
   return (
     <div className="flex-1 flex flex-col">
-      <div className="bg-surface border-b border-border px-5 py-3.5 flex items-center justify-between shrink-0" style={{ boxShadow: shadow }}>
+      <div className="bg-surface border-b border-border px-5 py-4 flex items-center justify-between shrink-0" style={{ boxShadow: shadow }}>
         <div>
           <h1 className="font-display text-lg font-semibold">Escalations</h1>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Structured summaries · independently evaluated before delivery
+            Structured summaries · independently evaluated · all traced in Arize
           </p>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span><span className="font-bold text-foreground tabular-nums">{unread}</span> unread</span>
-          <span className="text-border-strong">·</span>
-          <span><span className="font-bold text-foreground tabular-nums">{acked}</span> acknowledged</span>
-        </div>
+        {unread > 0 && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-risk-escalate-bg text-risk-escalate text-xs font-semibold border border-risk-escalate/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-risk-escalate animate-pulse" />
+            {unread} unread
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 py-4">
           {items.length === 0 ? (
             <div className="py-16 text-center">
-              <div className="text-4xl mb-3">🌸</div>
+              <CheckCircle2 className="w-10 h-10 text-risk-ok mx-auto mb-3 opacity-60" />
               <p className="text-sm text-muted-foreground">No escalations yet.</p>
             </div>
           ) : (
@@ -1110,7 +1202,7 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
                   <li
                     key={e.escalation_id}
                     className={`rounded-2xl border bg-surface ${
-                      !e.acknowledged ? "border-risk-escalate/40 bg-risk-escalate-bg/20" : "border-border"
+                      !e.acknowledged ? "border-risk-escalate/30" : "border-border"
                     }`}
                     style={{ boxShadow: !e.acknowledged ? shadowMd : shadow }}
                   >
@@ -1127,8 +1219,16 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {!e.acknowledged && <Btn onClick={() => onAck(e.escalation_id)}>Acknowledge</Btn>}
-                          <Btn variant="primary" onClick={() => onOpenPatient(e.patient_id)}>Open patient</Btn>
+                          {!e.acknowledged && (
+                            <Btn onClick={() => onAck(e.escalation_id)}>
+                              <X className="w-3.5 h-3.5 mr-1" />
+                              Acknowledge
+                            </Btn>
+                          )}
+                          <Btn variant="primary" onClick={() => onOpenPatient(e.patient_id)}>
+                            Open patient
+                            <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                          </Btn>
                         </div>
                       </div>
 
@@ -1145,7 +1245,7 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
                       )}
 
                       <div className="mt-3 pt-3 border-t border-border">
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Recommended action</div>
+                        <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Recommended action</div>
                         <p className="text-sm">{e.recommended_action}</p>
                       </div>
                     </div>
@@ -1171,24 +1271,24 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 }
 
 function CardTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-sm font-semibold text-foreground mb-0.5">{children}</div>
-  );
+  return <div className="text-sm font-semibold text-foreground mb-0.5">{children}</div>;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{children}</div>
-  );
+  return <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{children}</div>;
 }
 
-function Btn({ children, variant = "secondary", onClick }: {
-  children: React.ReactNode; variant?: "primary" | "secondary"; onClick?: () => void;
+function Btn({ children, variant = "secondary", onClick, disabled }: {
+  children: React.ReactNode;
+  variant?: "primary" | "secondary";
+  onClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center h-8 px-3.5 rounded-full text-sm font-semibold transition-all duration-100 active:scale-95 ${
+      disabled={disabled}
+      className={`inline-flex items-center h-8 px-3.5 rounded-full text-sm font-semibold transition-all duration-100 active:scale-95 disabled:opacity-50 disabled:pointer-events-none ${
         variant === "primary"
           ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:-translate-y-px"
           : "bg-surface border border-border text-foreground hover:bg-secondary hover:border-primary/30"
@@ -1197,6 +1297,34 @@ function Btn({ children, variant = "secondary", onClick }: {
     >
       {children}
     </button>
+  );
+}
+
+function ActionBtn({ icon: Icon, label, onClick }: {
+  icon: React.FC<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-sm font-medium text-muted-foreground border border-border bg-surface hover:bg-secondary hover:text-foreground hover:border-primary/30 transition-all duration-100 active:scale-95"
+    >
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+    </button>
+  );
+}
+
+function Chip({ children, warn = false }: { children: React.ReactNode; warn?: boolean }) {
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${
+      warn
+        ? "bg-risk-monitor-bg text-risk-monitor border-risk-monitor/20"
+        : "bg-muted text-muted-foreground border-border"
+    }`}>
+      {children}
+    </span>
   );
 }
 
@@ -1211,18 +1339,15 @@ function MetricChip({ label, value, highlight }: { label: string; value: string;
 
 function BPTrendChip({ trend }: { trend: "up" | "down" | "stable" }) {
   const map = {
-    up: { icon: "▲", label: "BP trending up", color: "text-risk-escalate" },
-    down: { icon: "▼", label: "BP trending down", color: "text-risk-ok" },
-    stable: { icon: "→", label: "BP stable", color: "text-muted-foreground" },
+    up: { label: "Trending up", color: "text-risk-escalate", Icon: TrendingUp },
+    down: { label: "Trending down", color: "text-risk-ok", Icon: TrendingUp },
+    stable: { label: "Stable", color: "text-muted-foreground", Icon: Activity },
   };
   const t = map[trend];
   return (
-    <div>
-      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-none mb-1">BP Trend</div>
-      <div className={`text-sm font-semibold flex items-center gap-1 ${t.color}`}>
-        <span>{t.icon}</span>
-        <span>{t.label}</span>
-      </div>
+    <div className={`flex items-center gap-1 text-xs font-semibold ${t.color}`}>
+      <t.Icon className={`w-3.5 h-3.5 ${trend === "down" ? "rotate-180" : ""}`} />
+      {t.label}
     </div>
   );
 }
@@ -1238,9 +1363,7 @@ function AnalyticCard({ label, value, sub, color, ring }: {
           <div className={`text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</div>
           <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{sub}</div>
         </div>
-        {ring !== null && ring !== undefined && (
-          <AdherenceRing pct={ring} small />
-        )}
+        {ring != null && <AdherenceRing pct={ring} small />}
       </div>
     </div>
   );
@@ -1251,19 +1374,13 @@ function AdherenceRing({ pct, small = false }: { pct: number; small?: boolean })
   const R = small ? 14 : 18;
   const circ = 2 * Math.PI * R;
   const dash = Math.max(0, Math.min(1, pct / 100)) * circ;
-  const color = pct >= 80 ? "oklch(0.42 0.09 155)" : pct >= 60 ? "oklch(0.50 0.13 75)" : "oklch(0.50 0.20 25)";
+  const color = pct >= 80 ? "oklch(0.40 0.08 155)" : pct >= 60 ? "oklch(0.48 0.11 75)" : "oklch(0.48 0.17 25)";
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
       <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="oklch(0.92 0.05 305)" strokeWidth={small ? 4 : 5} />
-      <circle
-        cx={size / 2} cy={size / 2} r={R}
-        fill="none"
-        stroke={color}
-        strokeWidth={small ? 4 : 5}
-        strokeDasharray={`${dash} ${circ - dash}`}
-        strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
+      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke={color} strokeWidth={small ? 4 : 5}
+        strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
       {!small && (
         <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" fontSize="10" fontWeight="700" fill="oklch(0.18 0.03 295)">
           {pct}%
@@ -1275,7 +1392,7 @@ function AdherenceRing({ pct, small = false }: { pct: number; small?: boolean })
 
 function RiskMeter({ score }: { score: number }) {
   return (
-    <div className="mt-2.5 mb-0.5 h-2 rounded-full bg-muted overflow-hidden">
+    <div className="my-2 h-1.5 rounded-full bg-muted overflow-hidden">
       <div
         className="h-full rounded-full bg-gradient-to-r from-risk-ok via-risk-monitor to-risk-escalate transition-all"
         style={{ width: `${score * 100}%` }}
@@ -1297,19 +1414,15 @@ function ChartLegend({ color, label, dashed }: { color?: string; label: string; 
 
 function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }) {
   if (!data.length) return null;
-  const W = 500;
-  const H = 140;
+  const W = 500; const H = 140;
   const PAD = { l: 26, r: 8, t: 8, b: 20 };
   const xs = (i: number) => PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(1, data.length - 1);
-  const yMin = 60;
-  const yMax = 160;
-  const ys = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - (v - yMin) / (yMax - yMin));
+  const ys = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - (v - 60) / 100);
   const sysPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xs(i)},${ys(d.sys)}`).join(" ");
   const diaPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xs(i)},${ys(d.dia)}`).join(" ");
-  const threshold = ys(140);
 
   return (
-    <div className="mt-2 w-full overflow-x-auto">
+    <div className="mt-2 w-full">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
         {[80, 100, 120, 140].map((v) => (
           <g key={v}>
@@ -1317,12 +1430,12 @@ function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }
             <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.50 0.04 295)">{v}</text>
           </g>
         ))}
-        <line x1={PAD.l} x2={W - PAD.r} y1={threshold} y2={threshold} stroke="oklch(0.50 0.20 25)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
+        <line x1={PAD.l} x2={W - PAD.r} y1={ys(140)} y2={ys(140)} stroke="oklch(0.48 0.17 25)" strokeWidth="1" strokeDasharray="4 3" opacity="0.6" />
         <path d={sysPath} stroke="oklch(0.52 0.20 305)" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         <path d={diaPath} stroke="oklch(0.38 0.15 305)" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round" strokeLinejoin="round" />
         {data.map((d, i) => (
           <g key={i}>
-            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4.5 : 3} fill={d.sys >= 140 ? "oklch(0.50 0.20 25)" : "oklch(0.52 0.20 305)"} />
+            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4.5 : 3} fill={d.sys >= 140 ? "oklch(0.48 0.17 25)" : "oklch(0.52 0.20 305)"} />
             <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 305)" opacity="0.7" />
             <text x={xs(i)} y={H - 4} fontSize="9" fill="oklch(0.50 0.04 295)" textAnchor="middle">{d.day}</text>
           </g>
