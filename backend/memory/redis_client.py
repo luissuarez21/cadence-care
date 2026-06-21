@@ -74,6 +74,10 @@ def notes_key(patient_id: str) -> str:
     return f"notes:{patient_id}"
 
 
+def followup_key(patient_id: str) -> str:
+    return f"followup:{patient_id}"
+
+
 def push_subscriptions_key(clinician_id: str) -> str:
     return f"push_subscriptions:{clinician_id}"
 
@@ -119,6 +123,29 @@ def set_plan(patient_id: str, plan: ProtocolJSON) -> None:
 def get_plan(patient_id: str) -> Optional[ProtocolJSON]:
     raw = get_client().get(plan_key(patient_id))
     return ProtocolJSON.model_validate_json(raw) if raw else None
+
+
+# ── Follow-up / appointment (followup:{id}) ─────────────────────────────────
+
+def set_followup(patient_id: str, when: str) -> dict:
+    """
+    Record the next appointment / check-in the clinician booked for this patient.
+    Stored as a small JSON blob (no schema model — this is an Adit-owned operational
+    key, not part of the frozen data contract). Returns what was stored.
+    """
+    from datetime import datetime, timezone
+    import json
+
+    record = {"when": when, "scheduled_at": datetime.now(timezone.utc).isoformat()}
+    get_client().set(followup_key(patient_id), json.dumps(record))
+    return record
+
+
+def get_followup(patient_id: str) -> Optional[dict]:
+    import json
+
+    raw = get_client().get(followup_key(patient_id))
+    return json.loads(raw) if raw else None
 
 
 # ── Session / chat (session:{id}:{session_id}) ──────────────────────────────

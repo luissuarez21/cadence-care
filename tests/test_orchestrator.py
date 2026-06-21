@@ -113,12 +113,27 @@ def test_dispatch_log_symptom_builds_schema(monkeypatch):
     assert captured["symptom"].bp_systolic == 142
 
 
-def test_stub_tool_error_is_recoverable():
+def test_stub_tool_error_is_recoverable(monkeypatch):
     """A NotImplementedError stub must come back as a recoverable tool error, not crash."""
-    # schedule_followup is still a stub; it must fail gracefully, not crash the loop.
-    out = orchestrator.dispatch_tool("schedule_followup", {"when": "tomorrow"}, "maria-chen")
+    def _stub(pid):
+        raise NotImplementedError
+    monkeypatch.setitem(orchestrator.TOOL_REGISTRY, "assess_risk", _stub)
+    out = orchestrator.dispatch_tool("assess_risk", {}, "maria-chen")
     assert out.is_error is True
     assert "not implemented" in out.content.lower()
+
+
+def test_dispatch_schedule_followup(monkeypatch):
+    """schedule_followup is now implemented (CAD-34): dispatch passes `when` and succeeds."""
+    captured = {}
+    def fake_followup(pid, when):
+        captured["pid"], captured["when"] = pid, when
+        return True
+    monkeypatch.setitem(orchestrator.TOOL_REGISTRY, "schedule_followup", fake_followup)
+
+    out = orchestrator.dispatch_tool("schedule_followup", {"when": "tomorrow 9am"}, "maria-chen")
+    assert out.is_error is False
+    assert captured == {"pid": "maria-chen", "when": "tomorrow 9am"}
 
 
 def test_patient_id_never_exposed_to_model():
