@@ -106,9 +106,17 @@ def setup_tracing(project_name: str = "cadence", required: bool = True) -> Optio
             ) from exc
         return None
 
+    # Railway (and some env UIs) silently strip the trailing '=' base64 padding
+    # from ARIZE_SPACE_ID, which makes Arize reject every export with
+    # StatusCode.INTERNAL. Restore the padding defensively: strip whitespace, drop
+    # any existing '=', and re-pad to a multiple of 4. A correctly-padded value is
+    # a no-op. (Does nothing for non-base64 mangling — that needs a correct value.)
+    space_id = os.environ["ARIZE_SPACE_ID"].strip().rstrip("=")
+    space_id += "=" * (-len(space_id) % 4)
+
     tracer_provider = register(  # pragma: no cover - needs live SDK + key
-        space_id=os.environ["ARIZE_SPACE_ID"],
-        api_key=os.environ["ARIZE_API_KEY"],
+        space_id=space_id,
+        api_key=os.environ["ARIZE_API_KEY"].strip(),
         project_name=project_name,
     )
 
