@@ -1,0 +1,62 @@
+CADENCE RISK RUBRIC — Preeclampsia surveillance (ok | monitor | escalate | escalate_urgent)
+
+Purpose
+-------
+The single source of truth for what each risk level MEANS and the plain-English
+language used to explain it. The deterministic classifier (backend/risk/classifier.py)
+implements these exact thresholds; the LLM-as-judge (backend/eval/arize_judge.py) uses
+this rubric to evaluate whether an escalation was appropriate. Keep all three aligned.
+
+Thresholds (ACOG preeclampsia criteria)
+---------------------------------------
+- Severe-range BP:   systolic >= 160 OR diastolic >= 110 (a single reading)
+- Elevated BP:       systolic >= 140 OR diastolic >= 90
+- Severe headache:   headache_severity >= 7 (0-10 scale)
+- Moderate headache: headache_severity 4-6
+- Vision changes:    blurred vision, spots, or flashing lights
+- Facial/hand swelling: swelling in the face or hands (not feet/ankles alone)
+- Decreased fetal movement: reported less than the patient's baseline
+- Aspirin nonadherence: low-dose aspirin missed 2+ consecutive check-ins
+
+Severity ordering (worst wins): escalate_urgent > escalate > monitor > ok.
+When multiple signals are present, the highest severity governs.
+
+────────────────────────────────────────────────────────────────────────────────
+escalate_urgent — urgent warning signs; notify the OB immediately
+- Severe-range BP on any single reading (>=160/110), OR
+- Severe headache (>=7/10) TOGETHER WITH vision changes (eclampsia warning), OR
+- Regular contractions before 37 weeks (possible preterm labor).
+Rationale voice (clinician): name the exact reading/symptom and that it meets the
+care plan's urgent threshold. Action: "Contact the patient now; consider same-day
+clinical evaluation."
+
+escalate — above threshold; notify the OB, advance the appointment if warranted
+- Two elevated readings (>=140/90) on the same day, OR
+- Severe persistent headache (>=7/10) alone, OR
+- New vision changes alone, OR
+- New facial/hand swelling WITH an elevated BP reading, OR
+- Decreased/absent fetal movement, OR
+- Upper-abdominal / right-upper-quadrant pain (if reported).
+Rationale voice: state the readings/symptoms plainly and that they meet the plan's
+notify threshold. Action: "Review today and reach out; consider advancing the visit."
+
+monitor — worth watching, not yet an escalation
+- A single elevated reading (>=140/90) on its own, OR
+- A moderate headache (4-6/10), OR
+- Facial/hand swelling with normal BP, OR
+- Rapid weight gain (>=5 lb / 2.3 kg in a week, if available), OR
+- Aspirin missed 2+ consecutive check-ins.
+Rationale voice: note the finding and that one such reading is worth watching but
+not yet a two-reading / urgent escalation. Action: "No action needed now — keep an
+eye on this at the next check-in."
+
+ok — everything within the care plan's normal range
+Rationale voice: "All readings on the latest check-in are within the care plan's
+normal range." Action: "Continue routine monitoring."
+
+────────────────────────────────────────────────────────────────────────────────
+Rationale rules (apply to every level)
+- Plain English, no black box. Always name the actual numbers/symptoms that drove it.
+- Never diagnose or name a condition. Describe findings vs. thresholds, not diseases.
+- Patient-facing copy stays calm and routes to the OB; clinical detail is for the
+  dashboard, not the patient.
