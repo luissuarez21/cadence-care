@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity, AlertTriangle, Baby, BookOpen, CalendarCheck, CheckCircle2,
@@ -124,6 +124,82 @@ function fmtTime(iso: string | null): string {
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+}
+
+/* ── Face avatar system ───────────────────────────────────────────────────── */
+
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+interface FaceConfig {
+  bg: string;
+  skin: string;
+  hair: string;
+  hairStyle: 0 | 1 | 2 | 3;
+}
+
+const FACE_CONFIGS: FaceConfig[] = [
+  { bg: "#EDE9FE", skin: "#FDDBB4", hair: "#2D1B0E", hairStyle: 1 }, // light skin, dark hair, long
+  { bg: "#E0F2FE", skin: "#F4C794", hair: "#7D4A1E", hairStyle: 2 }, // warm, brown wavy
+  { bg: "#FCE7F3", skin: "#C68642", hair: "#1A1A1A", hairStyle: 0 }, // medium, black short
+  { bg: "#FEF9EE", skin: "#8D5524", hair: "#0D0D0D", hairStyle: 3 }, // dark, afro
+  { bg: "#ECFDF5", skin: "#F1C27D", hair: "#8B1A1A", hairStyle: 1 }, // light-med, auburn long
+  { bg: "#EDE9FE", skin: "#3E1C00", hair: "#1A1A1A", hairStyle: 0 }, // deep, short
+  { bg: "#FFF7ED", skin: "#FDDBB4", hair: "#C9A84C", hairStyle: 2 }, // light, blonde wavy
+  { bg: "#F0FDF4", skin: "#C68642", hair: "#3B2314", hairStyle: 3 }, // medium, dark curly
+];
+
+function FaceAvatar({ patientId, size = 36 }: { patientId: string; size?: number }) {
+  const f = FACE_CONFIGS[hashStr(patientId) % FACE_CONFIGS.length];
+  const eye = "#2C1A0E";
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" className="shrink-0" aria-hidden>
+      {/* bg */}
+      <circle cx="20" cy="20" r="20" fill={f.bg} />
+
+      {/* hair — behind face */}
+      {f.hairStyle === 0 && (
+        /* short rounded */
+        <path d="M10.5 23 Q10 8 20 8 Q30 8 29.5 23" fill={f.hair} />
+      )}
+      {f.hairStyle === 1 && (
+        /* long — top + sides draping down */
+        <path d="M10 23 Q10 7 20 7 Q30 7 30 23 L32 38 Q26 40 20 40 Q14 40 8 38 Z" fill={f.hair} />
+      )}
+      {f.hairStyle === 2 && (
+        /* wavy layered */
+        <>
+          <path d="M10 23 Q9 11 14 8 Q20 4 26 8 Q31 11 30 23" fill={f.hair} />
+          <path d="M8 26 Q7 35 10 38 Q8 30 9.5 25" fill={f.hair} />
+          <path d="M32 26 Q33 35 30 38 Q32 30 30.5 25" fill={f.hair} />
+        </>
+      )}
+      {f.hairStyle === 3 && (
+        /* curly / natural volume */
+        <ellipse cx="20" cy="12" rx="11" ry="9" fill={f.hair} />
+      )}
+
+      {/* face */}
+      <ellipse cx="20" cy="25" rx="9.5" ry="10" fill={f.skin} />
+
+      {/* eyes */}
+      <circle cx="17" cy="23" r="1.3" fill={eye} />
+      <circle cx="23" cy="23" r="1.3" fill={eye} />
+      {/* eye shine */}
+      <circle cx="17.6" cy="22.4" r="0.45" fill="white" opacity="0.7" />
+      <circle cx="23.6" cy="22.4" r="0.45" fill="white" opacity="0.7" />
+
+      {/* nose */}
+      <ellipse cx="20" cy="26.2" rx="0.9" ry="0.6" fill={eye} opacity="0.25" />
+
+      {/* smile */}
+      <path d="M17.5 28.5 Q20 31 22.5 28.5" stroke={eye} strokeWidth="0.85" fill="none" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function bpSeries(timeline: SymptomLog[]) {
@@ -345,15 +421,21 @@ function ClinicianDashboard() {
               <PanelHeader rows={rows} />
               <div className="flex-1 overflow-y-auto">
                 {panelLoading ? (
-                  <div className="p-3 space-y-2">
+                  <div className="divide-y divide-border/40">
                     {[...Array(5)].map((_, i) => (
-                      <div key={i} className="h-[72px] rounded-xl bg-primary/8 animate-pulse" />
+                      <div key={i} className="px-4 py-3 flex items-center gap-3">
+                        <div className="w-[38px] h-[38px] rounded-full bg-primary/10 animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3 bg-primary/10 rounded animate-pulse w-3/4" />
+                          <div className="h-2.5 bg-primary/8 rounded animate-pulse w-1/2" />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : rows.length === 0 ? (
                   <p className="px-4 py-8 text-sm text-muted-foreground text-center">No patients assigned.</p>
                 ) : (
-                  <ul className="p-2 space-y-0.5">
+                  <ul className="py-0">
                     {rows.map((row) => (
                       <PatientRow
                         key={row.patient_id}
@@ -611,28 +693,39 @@ function PanelHeader({ rows }: { rows: PanelRow[] }) {
   const ok = rows.length - esc - mon;
 
   return (
-    <div className="px-4 pt-4 pb-3 border-b border-border/50 shrink-0">
-      <div className="flex items-center justify-between mb-2.5">
-        <h2 className="font-display text-sm font-semibold text-foreground">My Patients</h2>
-        <span className="h-5 px-2 inline-flex items-center rounded-full bg-primary/12 text-primary text-[11px] font-bold tabular-nums">
+    <div className="px-4 pt-4 pb-3 border-b border-border/60 shrink-0">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-display text-sm font-semibold text-foreground tracking-tight">My Patients</h2>
+        <span className="h-5 px-2 inline-flex items-center rounded-full bg-primary/12 text-primary text-[10px] font-bold tabular-nums">
           {rows.length}
         </span>
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] flex-wrap">
-        <PillStat color="bg-risk-escalate" label={`${esc} escalate`} textColor="text-risk-escalate" />
-        <PillStat color="bg-risk-monitor" label={`${mon} monitor`} textColor="text-risk-monitor" />
-        <PillStat color="bg-risk-ok" label={`${ok} on track`} textColor="text-risk-ok" />
+      <div className="grid grid-cols-3 gap-1.5">
+        <SidebarStat
+          count={esc}
+          label="Escalate"
+          color="text-risk-escalate"
+          bg="bg-risk-escalate-bg"
+          dot={esc > 0}
+        />
+        <SidebarStat count={mon} label="Monitor" color="text-risk-monitor" bg="bg-risk-monitor-bg" />
+        <SidebarStat count={ok} label="On track" color="text-risk-ok" bg="bg-risk-ok-bg" />
       </div>
     </div>
   );
 }
 
-function PillStat({ color, label, textColor }: { color: string; label: string; textColor: string }) {
+function SidebarStat({ count, label, color, bg, dot }: {
+  count: number; label: string; color: string; bg: string; dot?: boolean;
+}) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface border border-border/60 font-semibold ${textColor}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
-      {label}
-    </span>
+    <div className={`${bg} rounded-lg px-2 py-1.5 text-center`}>
+      <div className={`text-base font-bold tabular-nums leading-none ${color} flex items-center justify-center gap-1`}>
+        {dot && count > 0 && <span className={`w-1.5 h-1.5 rounded-full bg-current animate-pulse`} />}
+        {count}
+      </div>
+      <div className={`text-[9px] font-semibold mt-0.5 leading-none ${color} opacity-80`}>{label}</div>
+    </div>
   );
 }
 
@@ -640,24 +733,39 @@ function PatientRow({ row, active, onSelect }: {
   row: PanelRow; active: boolean; onSelect: () => void;
 }) {
   const sev: DisplayRisk = row.severity === "escalate_urgent" ? "escalate" : (row.severity as DisplayRisk);
+
+  const statusDot: Record<DisplayRisk, string> = {
+    ok: "bg-risk-ok",
+    monitor: "bg-risk-monitor",
+    escalate: "bg-risk-escalate",
+  };
+
   return (
-    <li>
+    <li className="border-b border-border/40 last:border-0">
       <button
         onClick={onSelect}
-        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 transition-all duration-150 active:scale-[0.98] ${
-          active ? "bg-surface" : "hover:bg-surface/70 hover:translate-x-0.5"
+        className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-all duration-150 active:scale-[0.99] ${
+          active
+            ? "bg-white/80 border-l-[3px] border-l-primary"
+            : "border-l-[3px] border-l-transparent hover:bg-white/50"
         }`}
-        style={active ? { boxShadow: shadow } : undefined}
       >
-        <Avatar name={row.patient_name} size="sm" />
-        <div className="flex-1 min-w-0 pt-0.5">
-          <div className="flex items-center justify-between gap-2 mb-0.5">
-            <span className="text-sm font-semibold truncate">{row.patient_name}</span>
+        <FaceAvatar patientId={row.patient_id} size={38} />
+
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-foreground truncate leading-snug">
+            {row.patient_name}
+          </div>
+          <div className="mt-1">
             <RiskBadge risk={sev} small />
           </div>
-          <div className="text-xs text-muted-foreground truncate leading-snug">{row.headline}</div>
-          <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">{fmtTime(row.last_check_in)}</div>
         </div>
+
+        <span
+          className={`w-2 h-2 rounded-full shrink-0 ${statusDot[sev]} ${
+            sev === "escalate" ? "animate-pulse" : ""
+          }`}
+        />
       </button>
     </li>
   );
@@ -726,7 +834,7 @@ function PatientDetailView({ detail }: { detail: PatientDetail }) {
         <div className="sticky top-0 z-10 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
           <div className="px-5 py-3 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <Avatar name={detail.patient_name} />
+              <FaceAvatar patientId={detail.patient_id} size={40} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h1 className="text-base font-display font-semibold truncate">{detail.patient_name}</h1>
@@ -1209,7 +1317,7 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
                     <div className="p-5">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
-                          <Avatar name={e.patient_name} />
+                          <FaceAvatar patientId={e.patient_id} size={38} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-base font-semibold">{e.patient_name}</span>
