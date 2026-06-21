@@ -6,6 +6,28 @@
 
 ---
 
+## ⛔ FROZEN CONTRACT — read before writing any backend code
+
+Two people build this repo in parallel (Adit = backend infra, Luis = AI layer), often with
+separate Claude Code sessions. To keep the two from drifting, the data shapes and API are
+**frozen**. Before generating or editing backend code, read:
+
+- **`backend/CONTRACT.md`** — endpoint table, Redis key map, ownership rules
+- **`backend/ingestion/schema.py`** — the 7 core data models (the field names ARE the contract)
+- **`backend/ingestion/api_models.py`** — request/response shape for every endpoint
+- **`backend/agent/tools.py`** — the 7 frozen tool signatures + registry
+
+Rules:
+1. **Do not rename a field** in `schema.py` without editing it there AND telling the other person.
+   The frontend, endpoints, and tools all key off these exact names.
+2. **Luis implements** `assess_risk`, `detect_pattern`, `generate_visit_summary` in his own files
+   (`backend/risk/`, `backend/summaries/`) and they get imported into `TOOL_REGISTRY`.
+   **Luis never edits `tools.py`** — only Adit owns the registry. This keeps the tool layer collision-free.
+3. Every tool returns a Pydantic model from `schema.py` — never an ad-hoc dict.
+4. Work in your own clone/branch; sync through GitHub. Don't both point Claude Code at the same folder.
+
+---
+
 ## What We Are Building
 
 **Cadence** is a proactive AI health companion for high-risk pregnant women and the OBs who care for them.
