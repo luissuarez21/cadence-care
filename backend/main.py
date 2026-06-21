@@ -14,7 +14,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import chat, clinician, ingest, patient, push
+from .routes import auth_routes, chat, clinician, ingest, patient, push
 
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Cadence API", version="0.1.0")
@@ -33,6 +33,7 @@ app.add_middleware(
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────
+app.include_router(auth_routes.router)
 app.include_router(chat.router)
 app.include_router(patient.router)
 app.include_router(ingest.router)

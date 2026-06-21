@@ -7,3 +7,4 @@ anthropic
 pywebpush
 python-dotenv
 arize-otel
+python-jose[cryptography]
