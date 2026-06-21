@@ -149,7 +149,8 @@ export function LiveChat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Share how you're feeling…"
-              className="flex-1 bg-transparent outline-none text-[14px] py-2 placeholder:text-ink/35"
+              /* 16px min font-size prevents iOS Safari auto-zoom on focus */
+              className="flex-1 bg-transparent outline-none text-[16px] py-2 placeholder:text-ink/35"
             />
             <button
               type="submit"
