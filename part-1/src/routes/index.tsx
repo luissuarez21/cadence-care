@@ -25,7 +25,7 @@ type Msg = {
 const GREETING: Msg = {
   id: 0,
   from: "cadence",
-  text: "Good afternoon, Maria. How are you feeling today? When you're ready, share your blood pressure reading.",
+  text: "Good afternoon, Maria. How are you feeling today? Take your time — tell me whatever's on your mind.",
 };
 
 type CareMessage = { text: string; timestamp: string };
@@ -185,7 +185,7 @@ function TodayPage() {
       {/* Quick suggestions — shown early in conversation */}
       {messages.length < 3 && !typing && (
         <div className="flex flex-wrap gap-2 mb-4">
-          {["142/91", "Feeling okay", "Mild headache"].map((s) => (
+          {["Feeling okay", "Mild headache", "Baby's been active"].map((s) => (
             <button
               key={s}
               type="button"
@@ -200,7 +200,7 @@ function TodayPage() {
 
       {/* Composer — floats above the nav; the white gradient fades any
           content scrolling beneath it so the pill reads as floating */}
-      <div className="fixed bottom-[84px] left-1/2 -translate-x-1/2 w-full max-w-[430px] z-10 px-5 pt-8 pb-3 bg-gradient-to-t from-white via-white to-transparent pointer-events-none">
+      <div className="fixed bottom-[108px] left-1/2 -translate-x-1/2 w-full max-w-[430px] z-10 px-5 pt-8 pb-2 bg-gradient-to-t from-white via-white to-transparent pointer-events-none">
         <form onSubmit={handleSend} className="pointer-events-auto">
           <div className="flex items-center gap-2 bg-white rounded-full pl-5 pr-1.5 py-1.5 shadow-lg shadow-bloom-500/15 ring-1 ring-sand-200/70">
             <input

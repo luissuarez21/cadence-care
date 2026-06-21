@@ -43,12 +43,6 @@ export function Splash() {
         >
           Cadence
         </p>
-        <p
-          className="mt-1.5 text-white/85 text-[13px] font-medium tracking-wide"
-          style={{ animation: "cade-rise 0.6s ease-out 0.55s both" }}
-        >
-          Hi, I&apos;m Cade
-        </p>
       </div>
 
       <style>{`
