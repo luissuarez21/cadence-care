@@ -34,10 +34,9 @@ from ..escalation.handler import escalate as _escalate
 
 
 def lookup_plan(patient_id: str, query: str) -> list[str]:
-    """RAG over the patient's care plan. Returns relevant plan chunks. (Adit — rag.py)"""
-    # Implemented in the RAG story (CAD-?). Until then this is a recoverable stub;
-    # the orchestrator turns NotImplementedError into a graceful tool error.
-    raise NotImplementedError
+    """RAG over the patient's care plan. Returns relevant plan chunks. (Adit — CAD-11)"""
+    from ..memory.rag import lookup_plan as _lookup
+    return _lookup(patient_id, query)
 
 
 def log_symptom(patient_id: str, data: SymptomLog) -> SymptomLog:
