@@ -31,6 +31,11 @@ const GREETING: Msg = {
 type CareMessage = { text: string; timestamp: string };
 
 function TodayPage() {
+  // A fresh session id per page load → conversation starts clean every reload.
+  // The backend keys history off this; a new id means empty history → greeting only.
+  const [sessionId] = useState(() =>
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}`,
+  );
   const [messages, setMessages] = useState<Msg[]>([GREETING]);
   const [careMessages, setCareMessages] = useState<CareMessage[]>([]);
   const [input, setInput] = useState("");
@@ -42,7 +47,7 @@ function TodayPage() {
   // Rehydrate thread from history on mount
   useEffect(() => {
     api
-      .get<{ patient_id: string; session_id: string; messages: Array<{ sender: string; text: string; timestamp: string; flagged?: boolean }> }>("/chat/history")
+      .get<{ patient_id: string; session_id: string; messages: Array<{ sender: string; text: string; timestamp: string; flagged?: boolean }> }>(`/chat/history?session_id=${sessionId}`)
       .then((res) => {
         if (res.messages.length > 0) {
           setMessages(
@@ -68,7 +73,7 @@ function TodayPage() {
       });
 
     inputRef.current?.focus();
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -91,6 +96,7 @@ function TodayPage() {
       const res = await api.post<{ reply: string; flagged: boolean; risk?: unknown }>("/chat/message", {
         patient_id: PATIENT_ID,
         message: text,
+        session_id: sessionId,
       });
       setTyping(false);
       setMessages((m) => [
@@ -192,28 +198,28 @@ function TodayPage() {
         </div>
       )}
 
-      {/* Composer */}
-      <form
-        onSubmit={handleSend}
-        className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-[430px] px-6"
-      >
-        <div className="flex items-center gap-2 bg-white border border-sand-200 rounded-full pl-5 pr-1.5 py-1.5 shadow-sm">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Share how you're feeling…"
-            className="flex-1 bg-transparent outline-none text-[14px] py-2 placeholder:text-ink/35"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || sending}
-            className="size-10 rounded-full bg-bloom-500 text-white grid place-items-center disabled:opacity-40 transition-opacity active:scale-95"
-          >
-            <Send className="size-4" />
-          </button>
-        </div>
-      </form>
+      {/* Composer — floats above the nav; the white gradient fades any
+          content scrolling beneath it so the pill reads as floating */}
+      <div className="fixed bottom-[84px] left-1/2 -translate-x-1/2 w-full max-w-[430px] z-10 px-5 pt-8 pb-3 bg-gradient-to-t from-white via-white to-transparent pointer-events-none">
+        <form onSubmit={handleSend} className="pointer-events-auto">
+          <div className="flex items-center gap-2 bg-white rounded-full pl-5 pr-1.5 py-1.5 shadow-lg shadow-bloom-500/15 ring-1 ring-sand-200/70">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Share how you're feeling…"
+              className="flex-1 bg-transparent outline-none text-[14px] py-2 placeholder:text-ink/35"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || sending}
+              className="size-10 rounded-full bg-bloom-500 text-white grid place-items-center disabled:opacity-40 transition-opacity active:scale-95"
+            >
+              <Send className="size-4" />
+            </button>
+          </div>
+        </form>
+      </div>
 
       {/* Peek at next step */}
       <Link
@@ -254,8 +260,8 @@ function ChatBubble({ msg }: { msg: Msg }) {
 
 function Avatar() {
   return (
-    <div className="size-7 rounded-full bg-leaf-700 grid place-items-center shrink-0">
-      <span className="text-white text-[10px] font-semibold tracking-wider font-serif">C</span>
+    <div className="size-7 rounded-full overflow-hidden ring-1 ring-bloom-500/20 shrink-0">
+      <img src="/icon-192.png" alt="Cade" className="size-full object-cover" />
     </div>
   );
 }

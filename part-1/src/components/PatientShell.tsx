@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { MessageCircle, ListChecks, BookOpen, FileText } from "lucide-react";
 
 const tabs = [
-  { to: "/", label: "Today", icon: MessageCircle },
+  { to: "/", label: "Cade", icon: MessageCircle },
   { to: "/watchfor", label: "Watch For", icon: ListChecks },
   { to: "/history", label: "History", icon: BookOpen },
   { to: "/summary", label: "Visit", icon: FileText },
