@@ -25,7 +25,7 @@ type Msg = {
 const GREETING: Msg = {
   id: 0,
   from: "cadence",
-  text: "Good morning, Maria. How are you feeling today? When you're ready, share your blood pressure reading.",
+  text: "Good afternoon, Maria. How are you feeling today? When you're ready, share your blood pressure reading.",
 };
 
 type CareMessage = { text: string; timestamp: string };
