@@ -77,12 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "Cadence — Your pregnancy companion" },
       { name: "description", content: "A warm daily check-in companion for your pregnancy journey." },
       { property: "og:title", content: "Cadence" },
       { property: "og:description", content: "A warm daily check-in companion for your pregnancy journey." },
       { property: "og:type", content: "website" },
+      // PWA / iOS "Add to Home Screen" — installable icon + full-screen standalone
+      { name: "theme-color", content: "#CD9BDC" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
+      { name: "apple-mobile-web-app-title", content: "Cadence" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -92,6 +98,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap",
       },
+      // PWA manifest + iOS home-screen icon
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "icon", type: "image/png", sizes: "192x192", href: "/icon-192.png" },
+      { rel: "icon", type: "image/png", sizes: "512x512", href: "/icon-512.png" },
     ],
   }),
   shellComponent: RootShell,
