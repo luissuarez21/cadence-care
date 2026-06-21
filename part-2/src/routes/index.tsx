@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { api, CLINICIAN_ID } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
@@ -421,6 +422,32 @@ function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean
 /* ── Patient detail ──────────────────────────────────────────────────────── */
 
 function PatientDetail({ detail }: { detail: PatientDetail }) {
+  async function runAction(action: "message" | "book" | "flag" | "note", content: string) {
+    try {
+      const res = await api.post<{ ok: boolean; message: string }>("/clinician/action", {
+        patient_id: detail.patient_id,
+        action,
+        content,
+      });
+      toast.success(res.message);
+    } catch (err) {
+      toast.error(`Couldn't ${action}: ${(err as Error).message}`);
+    }
+  }
+
+  function onMessage() {
+    const text = window.prompt(`Message to ${detail.patient_name}`);
+    if (text) runAction("message", text);
+  }
+  function onBook() {
+    const when = window.prompt("Book follow-up for when?", "as soon as possible");
+    if (when !== null) runAction("book", when);
+  }
+  function onNote() {
+    const note = window.prompt(`Add a note for ${detail.patient_name}`);
+    if (note) runAction("note", note);
+  }
+
   const sev: DisplayRisk =
     detail.current_risk?.severity === "escalate_urgent"
       ? "escalate"
@@ -449,10 +476,12 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <ActionBtn>Message patient</ActionBtn>
-          <ActionBtn>Book sooner</ActionBtn>
-          <ActionBtn>Flag for nurse</ActionBtn>
-          <ActionBtn primary>Add note</ActionBtn>
+          <ActionBtn onClick={onMessage}>Message patient</ActionBtn>
+          <ActionBtn onClick={onBook}>Book sooner</ActionBtn>
+          <ActionBtn onClick={() => runAction("flag", "Flagged for nurse review")}>
+            Flag for nurse
+          </ActionBtn>
+          <ActionBtn primary onClick={onNote}>Add note</ActionBtn>
         </div>
       </div>
 
@@ -746,9 +775,18 @@ function Divider() {
   return <span className="w-px h-8 bg-border" />;
 }
 
-function ActionBtn({ children, primary }: { children: React.ReactNode; primary?: boolean }) {
+function ActionBtn({
+  children,
+  primary,
+  onClick,
+}: {
+  children: React.ReactNode;
+  primary?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
+      onClick={onClick}
       className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
         primary
           ? "bg-primary text-primary-foreground hover:opacity-90"
