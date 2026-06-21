@@ -170,6 +170,102 @@ function computeAnalytics(timeline: SymptomLog[]): Analytics {
 const shadow = "0 2px 8px -2px oklch(0.52 0.20 305 / 0.14), 0 1px 3px -1px oklch(0.52 0.20 305 / 0.10)";
 const shadowMd = "0 6px 20px -4px oklch(0.52 0.20 305 / 0.20), 0 2px 6px -2px oklch(0.52 0.20 305 / 0.12)";
 
+/* ── Smart inferences ────────────────────────────────────────────────────── */
+
+interface Inference {
+  icon: string;
+  title: string;
+  body: string;
+  suggestion: string;
+}
+
+function computeInferences(timeline: SymptomLog[]): Inference[] {
+  const out: Inference[] = [];
+  const headacheDays = timeline.filter((e) => (e.headache_severity ?? 0) > 0).length;
+  const missedAspirin = timeline.filter((e) => e.medication_taken === false).length;
+  const elevatedBP = timeline.filter((e) => (e.bp_systolic ?? 0) >= 140).length;
+  const swellingFacial = timeline.filter(
+    (e) => e.swelling_location && /face|hand/i.test(e.swelling_location)
+  ).length;
+  const lowMovement = timeline.filter(
+    (e) => e.fetal_movement && /less|decreas/i.test(e.fetal_movement)
+  ).length;
+  const visionDays = timeline.filter((e) => e.vision_changes === true).length;
+  const headacheWithBP = timeline.filter(
+    (e) => (e.headache_severity ?? 0) > 0 && (e.bp_systolic ?? 0) >= 130
+  ).length;
+
+  if (headacheDays >= 2 && headacheWithBP >= 2) {
+    out.push({
+      icon: "🔗",
+      title: "Headaches correlate with higher-BP days",
+      body: `${headacheDays} headache reports align with elevated BP readings — may indicate cerebral vasospasm rather than a tension headache.`,
+      suggestion: "Ask about headache location (frontal vs. occipital) and whether onset follows activity or rest.",
+    });
+  } else if (headacheDays >= 2) {
+    out.push({
+      icon: "💧",
+      title: "Recurring headaches — check hydration",
+      body: `Headaches on ${headacheDays} of ${timeline.length} logged days. Dehydration is a common non-BP trigger in pregnancy, especially if she's limiting fluids to reduce swelling.`,
+      suggestion: "Ask how much water she drinks and whether she's been avoiding fluids intentionally.",
+    });
+  }
+
+  if (missedAspirin >= 2 && elevatedBP >= 2) {
+    out.push({
+      icon: "⚠",
+      title: "Missed aspirin + elevated BP — review dosing",
+      body: `${missedAspirin} missed aspirin doses alongside ${elevatedBP} elevated readings. Consistent daily dosing is critical for the platelet effect that reduces preeclampsia risk.`,
+      suggestion: "Consider whether 81mg remains appropriate or if 162mg is indicated per MFM consult guidelines.",
+    });
+  } else if (missedAspirin >= 2) {
+    out.push({
+      icon: "💊",
+      title: "Aspirin adherence gaps",
+      body: `Low-dose aspirin was skipped ${missedAspirin} times. Platelets turn over every ~10 days — inconsistent dosing erodes the antiplatelet effect that protects her.`,
+      suggestion: "Link it to a fixed daily cue (same meal, toothbrushing). Ask what's getting in the way.",
+    });
+  }
+
+  if (elevatedBP >= 2 && !out.find((i) => i.icon === "⚠")) {
+    out.push({
+      icon: "🧂",
+      title: "Dietary sodium worth exploring",
+      body: `${elevatedBP} elevated readings this period. Transient spikes are often diet-driven — restaurant meals and processed foods can add 15–20 mmHg.`,
+      suggestion: "Ask about recent meals, dining out frequency, and any dietary changes in the past 2 weeks.",
+    });
+  }
+
+  if (swellingFacial >= 1) {
+    out.push({
+      icon: "🫧",
+      title: "Facial or hand swelling pattern",
+      body: "Facial or hand swelling (not just ankles) alongside BP elevation is a distinct preeclampsia pattern — unlike typical pregnancy-related foot swelling.",
+      suggestion: "Ask if she notices puffiness in the morning or after lying down — more diagnostic than end-of-day ankle swelling.",
+    });
+  }
+
+  if (lowMovement >= 1) {
+    out.push({
+      icon: "👶",
+      title: "Fetal movement change — confirm counting method",
+      body: "Patient reported reduced fetal movement. Reliability depends on whether she uses a consistent kick count method and knows her baseline.",
+      suggestion: "Ask: rested during the count? Cold drink + left-side lie-down? What baseline feels like for her specifically.",
+    });
+  }
+
+  if (visionDays >= 1) {
+    out.push({
+      icon: "👁",
+      title: "Visual changes — eclampsia precursor flag",
+      body: "Any report of spots, flashing lights, or blurring alongside elevated BP significantly raises impending eclampsia risk.",
+      suggestion: "Verify at appointment: visual acuity baseline, and consider fundoscopic exam if available.",
+    });
+  }
+
+  return out.slice(0, 4);
+}
+
 /* care plan coaching topics from preeclampsia_risk.json */
 const CARE_PLAN_REMINDERS = [
   "Take low-dose aspirin at the same time daily",
@@ -237,7 +333,7 @@ function ClinicianDashboard() {
 
       {view === "panel" ? (
         <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
-          <aside className="bg-surface border-r border-border flex flex-col overflow-hidden">
+          <aside className="bg-sidebar border-r border-border/60 flex flex-col overflow-hidden">
             <PanelHeader rows={rows} />
             <div className="flex-1 overflow-y-auto">
               {panelLoading ? (
@@ -309,12 +405,7 @@ function TopBar({ view, onView, newEscalations }: {
 }) {
   return (
     <header className="h-14 px-5 flex items-center gap-5 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
-      <div className="flex items-center gap-2 shrink-0">
-        <CadenceMark />
-        <span className="font-display text-base font-semibold tracking-tight text-primary">Cadence</span>
-        <span className="text-border-strong mx-0.5 select-none">·</span>
-        <span className="text-xs text-muted-foreground font-medium">Clinician</span>
-      </div>
+      <CadenceLogo />
 
       <nav className="flex items-center gap-0.5">
         <NavBtn active={view === "panel"} onClick={() => onView("panel")}>Patients</NavBtn>
@@ -347,7 +438,7 @@ function NavBtn({ children, active, onClick }: {
   return (
     <button
       onClick={onClick}
-      className={`h-8 px-3.5 rounded-full text-sm font-semibold transition-all ${
+      className={`h-8 px-3.5 rounded-full text-sm font-semibold transition-all duration-100 active:scale-95 ${
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -358,19 +449,27 @@ function NavBtn({ children, active, onClick }: {
   );
 }
 
-function CadenceMark() {
+function CadenceLogo() {
   return (
-    <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
-      <circle cx="14" cy="14" r="13" fill="oklch(0.52 0.20 305 / 0.10)" stroke="oklch(0.52 0.20 305 / 0.30)" strokeWidth="1" />
-      <path
-        d="M4 16 L9 16 L11 11 L14 20 L17 8 L20 16 L24 16"
-        stroke="oklch(0.52 0.20 305)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
+    <div className="flex items-center gap-2.5 shrink-0">
+      {/* Bunny circle logo */}
+      <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center shrink-0">
+        <svg width="22" height="24" viewBox="0 0 22 24" fill="none" aria-hidden>
+          {/* left ear */}
+          <path d="M6.5 11 C6.5 11 4 5 5.5 2.5 C6.5 0.5 9 1.5 9 4.5 L9 11" fill="white" fillOpacity="0.95" />
+          {/* right ear */}
+          <path d="M15.5 11 C15.5 11 18 5 16.5 2.5 C15.5 0.5 13 1.5 13 4.5 L13 11" fill="white" fillOpacity="0.95" />
+          {/* head */}
+          <circle cx="11" cy="16.5" r="6.5" fill="white" />
+          {/* nose */}
+          <ellipse cx="11" cy="17.5" rx="1.2" ry="0.9" fill="oklch(0.52 0.20 305 / 0.4)" />
+        </svg>
+      </div>
+      <div className="leading-tight select-none">
+        <div className="font-display text-sm font-semibold text-foreground tracking-tight">Cadence</div>
+        <div className="text-[9px] text-muted-foreground font-semibold tracking-widest uppercase">Clinician</div>
+      </div>
+    </div>
   );
 }
 
@@ -426,10 +525,10 @@ function PatientRow({ row, active, onSelect }: {
     <li>
       <button
         onClick={onSelect}
-        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 transition-all ${
+        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 transition-all duration-150 active:scale-[0.98] ${
           active
             ? "bg-surface text-foreground"
-            : "hover:bg-surface/60"
+            : "hover:bg-surface/70 hover:translate-x-0.5"
         }`}
         style={active ? { boxShadow: shadow } : undefined}
       >
@@ -600,6 +699,9 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
             </Card>
           </div>
 
+          {/* ── Smart inferences ── */}
+          <SmartInferencesCard timeline={detail.timeline} />
+
           {/* ── Row 2: Analytics ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <AnalyticCard
@@ -607,29 +709,25 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
               value={String(analytics.total)}
               sub="this monitoring period"
               color="text-primary"
-              bgColor="bg-primary/8"
             />
             <AnalyticCard
               label="BP elevated"
               value={String(analytics.elevated)}
               sub={`of ${analytics.total} readings ≥140`}
-              color={analytics.elevated > 0 ? "text-risk-escalate" : "text-risk-ok"}
-              bgColor={analytics.elevated > 0 ? "bg-risk-escalate-bg" : "bg-risk-ok-bg"}
+              color={analytics.elevated > 0 ? "text-risk-escalate" : "text-foreground"}
             />
             <AnalyticCard
               label="Med adherence"
               value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
               sub="aspirin taken"
-              color={analytics.adherence !== null && analytics.adherence >= 80 ? "text-risk-ok" : "text-risk-monitor"}
-              bgColor="bg-muted"
+              color={analytics.adherence !== null && analytics.adherence < 80 ? "text-risk-monitor" : "text-foreground"}
               ring={analytics.adherence}
             />
             <AnalyticCard
               label="Headache days"
               value={String(analytics.headacheDays)}
               sub="reported this period"
-              color={analytics.headacheDays >= 3 ? "text-risk-monitor" : "text-muted-foreground"}
-              bgColor="bg-muted"
+              color={analytics.headacheDays >= 3 ? "text-risk-monitor" : "text-foreground"}
             />
           </div>
 
@@ -639,7 +737,7 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
               <CardTitle>7-day check-in activity</CardTitle>
               <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-primary/30 inline-block" /> Check-in</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-risk-escalate inline-block" /> Elevated BP</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-primary/80 inline-block" /> Elevated BP</span>
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted border border-border inline-block" /> No data</span>
               </div>
             </div>
@@ -649,7 +747,7 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
                   <div
                     className={`w-full rounded-md transition-all ${
                       d.flagged
-                        ? "bg-risk-escalate h-10"
+                        ? "bg-primary/80 h-10"
                         : d.checked
                           ? "bg-primary/40 h-8"
                           : "bg-muted border border-border/60 h-6"
@@ -862,11 +960,47 @@ function EscalationsInbox({ items, onAck, onOpenPatient }: {
   );
 }
 
+/* ── Smart inferences card ───────────────────────────────────────────────── */
+
+function SmartInferencesCard({ timeline }: { timeline: SymptomLog[] }) {
+  const inferences = computeInferences(timeline);
+  if (inferences.length === 0) return null;
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <CardTitle>Smart inferences</CardTitle>
+        <span className="text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
+          AI · from check-in history
+        </span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        {inferences.map((inf, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-border bg-background p-3 flex gap-3 group transition-all duration-150 hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-px"
+          >
+            <div className="text-lg shrink-0 mt-0.5">{inf.icon}</div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold leading-snug">{inf.title}</div>
+              <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{inf.body}</div>
+              <div className="mt-2 flex items-start gap-1.5">
+                <span className="text-primary shrink-0 mt-[2px] text-[10px]">→</span>
+                <span className="text-xs text-primary font-medium leading-relaxed">{inf.suggestion}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 /* ── Shared primitives ────────────────────────────────────────────────────── */
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-border bg-surface ${className}`} style={{ boxShadow: shadow }}>
+    <div className={`rounded-2xl border border-border bg-surface transition-shadow hover:shadow-md ${className}`} style={{ boxShadow: shadow }}>
       {children}
     </div>
   );
@@ -890,10 +1024,10 @@ function Btn({ children, variant = "secondary", onClick }: {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center h-8 px-3.5 rounded-full text-sm font-semibold transition-all ${
+      className={`inline-flex items-center h-8 px-3.5 rounded-full text-sm font-semibold transition-all duration-100 active:scale-95 ${
         variant === "primary"
-          ? "bg-primary text-primary-foreground hover:bg-primary/90"
-          : "bg-surface border border-border text-foreground hover:bg-secondary"
+          ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:-translate-y-px"
+          : "bg-surface border border-border text-foreground hover:bg-secondary hover:border-primary/30"
       }`}
       style={variant === "primary" ? { boxShadow: shadow } : undefined}
     >
@@ -929,11 +1063,11 @@ function BPTrendChip({ trend }: { trend: "up" | "down" | "stable" }) {
   );
 }
 
-function AnalyticCard({ label, value, sub, color, bgColor, ring }: {
-  label: string; value: string; sub: string; color: string; bgColor: string; ring?: number | null;
+function AnalyticCard({ label, value, sub, color, ring }: {
+  label: string; value: string; sub: string; color: string; ring?: number | null;
 }) {
   return (
-    <div className={`rounded-2xl border border-border p-4 ${bgColor}`} style={{ boxShadow: shadow }}>
+    <div className="rounded-2xl border border-border bg-surface p-4 transition-shadow hover:shadow-md" style={{ boxShadow: shadow }}>
       <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{label}</div>
       <div className="flex items-end justify-between gap-2">
         <div>
