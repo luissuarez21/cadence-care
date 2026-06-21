@@ -131,6 +131,12 @@ class SummaryResponse(BaseModel):
     visit_summary: VisitSummary
 
 
+class MessagesResponse(BaseModel):
+    """Clinician → patient messages (messages:{id}); the patient app reads these. (CAD-35)"""
+    patient_id: str
+    messages: list[ChatMessage]            # chronological, oldest first
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/push/subscribe  (clinician — register browser for Web Push)
 # ─────────────────────────────────────────────────────────────────────────────

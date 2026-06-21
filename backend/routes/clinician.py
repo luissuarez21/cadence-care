@@ -158,9 +158,9 @@ async def action(
     now = datetime.now(timezone.utc)
     if req.action == "message":
         # Clinician → patient secure message (messages:{id}); patient app reads it.
-        redis_client.get_client().rpush(
-            redis_client.messages_key(req.patient_id),
-            ChatMessage(sender="cadence", text=req.content, timestamp=now).model_dump_json(),
+        redis_client.add_message(
+            req.patient_id,
+            ChatMessage(sender="cadence", text=req.content, timestamp=now),
         )
         return ActionResponse(ok=True, message="Message sent to patient.")
 
