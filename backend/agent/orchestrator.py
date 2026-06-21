@@ -442,7 +442,31 @@ def respond(
             _TRACER = None
         _TRACER_INITIALIZED = True
 
+    # Semantic safety layer (condition-agnostic). Runs on every message BEFORE the
+    # care-plan agent loop. Catches danger the condition pack can't encode (self-harm,
+    # abuse, acute emergency) and routes it to the clinician regardless of assess_risk.
+    from ..safety import classifier as safety
+
+    verdict = safety.classify(user_message, patient_id=patient_id, tracer=_TRACER)
+    if safety.is_escalating(verdict):
+        try:
+            from ..escalation.handler import escalate_safety
+
+            escalate_safety(patient_id, verdict)
+        except Exception:
+            # A safety escalation must never crash the turn; the verdict is still traced.
+            pass
+
+        if safety.is_short_circuit(verdict):
+            # Acute crisis: do NOT let the model freelance. Return the calm,
+            # resource-bearing crisis message verbatim and stop here.
+            return AgentResult(text=safety.CRISIS_RESPONSE, flagged=True)
+
     result = AgentResult()
     for _ in stream_agent(patient_id, system_prompt, messages, result, tracer=_TRACER):
         pass
+    # Lower-severity safety concern (e.g. acute distress): the clinician was notified
+    # above; mark the turn flagged so the UI reflects it.
+    if safety.is_escalating(verdict):
+        result.flagged = True
     return result

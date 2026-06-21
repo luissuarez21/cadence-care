@@ -32,6 +32,18 @@ Sender = Literal["cadence", "patient"]
 # Clinician one-click action types.
 ActionType = Literal["message", "book", "flag", "note"]
 
+# Condition-agnostic safety categories detected by the semantic safety layer
+# (backend/safety/classifier.py). These are NOT in any condition pack — they are
+# the universal "something dangerous outside the care plan" signals (e.g. a
+# patient expressing suicidal ideation). "none" means the message is safe.
+SafetyCategory = Literal[
+    "none",
+    "self_harm",          # suicidal ideation, self-injury
+    "abuse",              # domestic violence, abuse, feeling unsafe
+    "medical_emergency",  # acute emergency outside the condition pack's red flags
+    "acute_distress",     # severe psychological distress / crisis
+]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. ProtocolJSON — the parsed care plan (output of plan ingestion)
@@ -143,6 +155,23 @@ class EscalationSummary(BaseModel):
     pattern_context: list[str] = Field(default_factory=list)  # related PatternAlert titles
     recommended_action: str
     acknowledged: bool = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5b. SafetyVerdict — output of the semantic safety classifier (backend/safety)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SafetyVerdict(BaseModel):
+    """
+    The semantic safety layer's read on a single patient message — condition-
+    agnostic, run on every free-text turn independent of the care-plan red flags.
+    `category == "none"` (severity "ok") means safe; anything else routes to the
+    clinician regardless of what assess_risk says.
+    """
+    category: SafetyCategory = "none"
+    severity: Severity = "ok"              # ok | monitor | escalate | escalate_urgent
+    confidence: float = 0.0                # 0.0–1.0
+    rationale: str = ""                    # plain-English why (de-identified before Arize)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
