@@ -188,6 +188,41 @@ def get_push_subscription(clinician_id: str) -> Optional[dict]:
     return json.loads(raw) if raw else None
 
 
+# ── Patient enumeration (clinician panel / escalation inbox) ────────────────
+
+def scan_patient_ids() -> list[str]:
+    """
+    Every patient_id that has any data on file. Scans the patient-scoped key
+    families and unions the ids. Used by the clinician panel + escalation inbox.
+    """
+    client = get_client()
+    ids: set[str] = set()
+    for prefix in ("plan", "risk_timeline", "symptoms", "escalations"):
+        for key in client.scan_iter(match=f"{prefix}:*"):
+            # key is "prefix:patient_id" (decode_responses=True -> str)
+            _, _, pid = key.partition(":")
+            if pid:
+                ids.add(pid)
+    return sorted(ids)
+
+
+# ── Escalation pub/sub (live clinician WebSocket) ───────────────────────────
+
+ESCALATION_CHANNEL = "escalations:new"
+
+
+def publish_escalation(escalation: EscalationSummary) -> None:
+    """Publish a new escalation so live clinician WebSockets get it instantly."""
+    get_client().publish(ESCALATION_CHANNEL, escalation.model_dump_json())
+
+
+def escalation_pubsub():
+    """A pub/sub handle subscribed to the new-escalation channel (caller closes it)."""
+    pubsub = get_client().pubsub()
+    pubsub.subscribe(ESCALATION_CHANNEL)
+    return pubsub
+
+
 # ── In-isolation self-test (CAD-3 AC: tested against a live Redis) ───────────
 
 def _self_test() -> None:
