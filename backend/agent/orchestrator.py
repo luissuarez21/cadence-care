@@ -18,11 +18,14 @@ Model: claude-sonnet-4-6 (do not hardcode older versions).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
+
+logger = logging.getLogger("cadence.orchestrator")
 
 try:
     from dotenv import load_dotenv
@@ -438,8 +441,12 @@ def respond(
     if not _TRACER_INITIALIZED:
         try:
             _TRACER = setup_tracing(project_name="cadence", required=True)
-        except RuntimeError:
+            logger.warning("Arize tracing: LIVE (project=cadence) — traces will ship.")
+        except RuntimeError as exc:
             _TRACER = None
+            # Loud on purpose: this is the #1 reason 'no traces in Arize'. Shows
+            # in Railway logs so you can tell instantly whether keys are set.
+            logger.warning("Arize tracing: DISABLED — %s", exc)
         _TRACER_INITIALIZED = True
 
     from ..safety import classifier as safety
