@@ -1,9 +1,9 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { MessageCircle, ListChecks, BookOpen, FileText } from "lucide-react";
+import { Rabbit, ListChecks, BookOpen, FileText } from "lucide-react";
 
 const tabs = [
-  { to: "/", label: "Cade", icon: MessageCircle },
+  { to: "/", label: "Cade", icon: Rabbit },
   { to: "/watchfor", label: "Watch For", icon: ListChecks },
   { to: "/history", label: "History", icon: BookOpen },
   { to: "/summary", label: "Visit", icon: FileText },
@@ -15,7 +15,7 @@ interface ShellProps {
   title?: string;
 }
 
-export function PatientShell({ children, eyebrow = "Good Morning", title = "Maria Chen" }: ShellProps) {
+export function PatientShell({ children, eyebrow = "Good Afternoon", title = "Maria Chen" }: ShellProps) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
