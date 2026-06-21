@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, CLINICIAN_ID } from "@/lib/api";
 
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/")({
   component: ClinicianDashboard,
 });
 
-/* ── API contract types (mirror backend/ingestion/api_models.py) ─────────── */
+/* ── API contract types ───────────────────────────────────────────────────── */
 
 type Severity = "ok" | "monitor" | "escalate" | "escalate_urgent";
 
@@ -99,7 +99,7 @@ interface EscalationSummary {
   acknowledged: boolean;
 }
 
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
+/* ── Helpers ──────────────────────────────────────────────────────────────── */
 
 function severityToScore(s: Severity): number {
   return s === "escalate" || s === "escalate_urgent" ? 0.85 : s === "monitor" ? 0.6 : 0.25;
@@ -107,20 +107,17 @@ function severityToScore(s: Severity): number {
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  const diff = (Date.now() - d.getTime()) / 1000;
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
   return fmtDate(iso);
 }
 
-/* derive BP chart data from SymptomLog[] */
 function bpSeries(timeline: SymptomLog[]) {
   return timeline
     .filter((e) => e.bp_systolic != null && e.bp_diastolic != null)
@@ -131,10 +128,14 @@ function bpSeries(timeline: SymptomLog[]) {
     }));
 }
 
+function getInitials(name: string): string {
+  return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+}
+
 const BASE_WS = (import.meta.env.VITE_API_URL as string | undefined)
   ?.replace(/^http/, "ws") ?? "ws://localhost:8000";
 
-/* ── Root component ──────────────────────────────────────────────────────── */
+/* ── Root ─────────────────────────────────────────────────────────────────── */
 
 type View = "panel" | "escalations";
 
@@ -147,7 +148,6 @@ function ClinicianDashboard() {
   const [panelLoading, setPanelLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  /* load panel on mount */
   useEffect(() => {
     api.get<{ patients: PanelRow[] }>("/clinician/panel")
       .then((r) => {
@@ -158,7 +158,6 @@ function ClinicianDashboard() {
       .finally(() => setPanelLoading(false));
   }, []);
 
-  /* load escalations + live WebSocket */
   useEffect(() => {
     api.get<{ escalations: EscalationSummary[] }>("/clinician/escalations")
       .then((r) => setEscalations(r.escalations))
@@ -176,7 +175,6 @@ function ClinicianDashboard() {
     return () => ws.close();
   }, []);
 
-  /* load detail when selected patient changes */
   useEffect(() => {
     if (!selectedId) return;
     setDetailLoading(true);
@@ -190,34 +188,55 @@ function ClinicianDashboard() {
   const newEscalations = escalations.filter((e) => !e.acknowledged).length;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <TopBar view={view} onView={setView} newEscalations={newEscalations} />
+
       {view === "panel" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-0 border-t border-border">
-          <aside className="border-r border-border bg-surface min-h-[calc(100vh-64px)]">
+        <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
+          {/* Sidebar */}
+          <aside className="border-r border-border bg-surface flex flex-col overflow-hidden">
             <PanelHeader rows={rows} />
-            {panelLoading ? (
-              <div className="px-5 py-8 text-sm text-muted-foreground">Loading patients…</div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {rows.map((row) => (
-                  <PatientRow
-                    key={row.patient_id}
-                    row={row}
-                    active={row.patient_id === selectedId}
-                    onSelect={() => setSelectedId(row.patient_id)}
-                  />
-                ))}
-              </ul>
-            )}
+            <div className="flex-1 overflow-y-auto">
+              {panelLoading ? (
+                <div className="p-4 space-y-2">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-[72px] rounded-md bg-muted animate-pulse" />
+                  ))}
+                </div>
+              ) : rows.length === 0 ? (
+                <p className="px-4 py-8 text-sm text-muted-foreground">No patients assigned.</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {rows.map((row) => (
+                    <PatientRow
+                      key={row.patient_id}
+                      row={row}
+                      active={row.patient_id === selectedId}
+                      onSelect={() => setSelectedId(row.patient_id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
           </aside>
-          <main className="bg-background">
+
+          {/* Detail pane */}
+          <main className="bg-background overflow-y-auto">
             {detailLoading ? (
-              <div className="px-8 py-12 text-sm text-muted-foreground">Loading…</div>
+              <div className="p-6 space-y-4">
+                <div className="h-[88px] rounded-lg bg-muted animate-pulse" />
+                <div className="grid grid-cols-2 gap-4">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-40 rounded-lg bg-muted animate-pulse" />
+                  ))}
+                </div>
+              </div>
             ) : detail ? (
               <PatientDetail detail={detail} />
             ) : (
-              <div className="px-8 py-12 text-sm text-muted-foreground">Select a patient.</div>
+              <div className="flex items-center justify-center h-full min-h-64 text-sm text-muted-foreground">
+                Select a patient to view details.
+              </div>
             )}
           </main>
         </div>
@@ -239,7 +258,7 @@ function ClinicianDashboard() {
   );
 }
 
-/* ── Top bar ─────────────────────────────────────────────────────────────── */
+/* ── Top bar ──────────────────────────────────────────────────────────────── */
 
 function TopBar({
   view,
@@ -251,41 +270,39 @@ function TopBar({
   newEscalations: number;
 }) {
   return (
-    <header className="h-16 px-6 flex items-center justify-between bg-surface">
-      <div className="flex items-center gap-8">
-        <div className="flex items-center gap-2">
-          <CadenceMark />
-          <div className="leading-tight">
-            <div className="font-display text-lg font-semibold tracking-tight">Cadence</div>
-            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-              Clinician
-            </div>
-          </div>
-        </div>
-        <nav className="flex items-center gap-1 text-sm">
-          <NavBtn active={view === "panel"} onClick={() => onView("panel")}>
-            Patient panel
-          </NavBtn>
-          <NavBtn active={view === "escalations"} onClick={() => onView("escalations")}>
-            <span className="flex items-center gap-2">
-              Escalations
-              {newEscalations > 0 && (
-                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-[11px] font-semibold rounded-full bg-risk-escalate text-white">
-                  {newEscalations}
-                </span>
-              )}
-            </span>
-          </NavBtn>
-        </nav>
+    <header className="h-14 px-5 flex items-center gap-5 bg-surface border-b border-border shrink-0">
+      {/* Brand */}
+      <div className="flex items-center gap-2 shrink-0">
+        <CadenceMark />
+        <span className="text-sm font-semibold tracking-tight">Cadence</span>
+        <span className="text-border-strong mx-0.5 select-none">·</span>
+        <span className="text-xs text-muted-foreground font-medium">Clinician</span>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="text-right leading-tight">
+
+      {/* Nav */}
+      <nav className="flex items-center gap-0.5">
+        <NavBtn active={view === "panel"} onClick={() => onView("panel")}>
+          Patients
+        </NavBtn>
+        <NavBtn active={view === "escalations"} onClick={() => onView("escalations")}>
+          <span className="flex items-center gap-1.5">
+            Escalations
+            {newEscalations > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-risk-escalate text-white text-[10px] font-semibold leading-none tabular-nums">
+                {newEscalations}
+              </span>
+            )}
+          </span>
+        </NavBtn>
+      </nav>
+
+      {/* User */}
+      <div className="ml-auto flex items-center gap-3">
+        <div className="text-right leading-snug">
           <div className="text-sm font-medium">Dr. Aiyana Reyes, MD</div>
-          <div className="text-[11px] text-muted-foreground">MFM · Westside Women's Health</div>
+          <div className="text-[11px] text-muted-foreground">Westside Women's Health</div>
         </div>
-        <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
-          AR
-        </div>
+        <Avatar name="Aiyana Reyes" size="sm" />
       </div>
     </header>
   );
@@ -303,10 +320,10 @@ function NavBtn({
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+      className={`h-8 px-3 rounded-md text-sm font-medium transition-colors ${
         active
           ? "bg-secondary text-secondary-foreground"
-          : "text-muted-foreground hover:text-foreground"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted"
       }`}
     >
       {children}
@@ -316,7 +333,7 @@ function NavBtn({
 
 function CadenceMark() {
   return (
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
+    <svg width="24" height="24" viewBox="0 0 28 28" fill="none" aria-hidden>
       <circle cx="14" cy="14" r="13" stroke="currentColor" strokeOpacity="0.15" />
       <path
         d="M4 16 L9 16 L11 11 L14 20 L17 8 L20 16 L24 16"
@@ -330,25 +347,58 @@ function CadenceMark() {
   );
 }
 
-/* ── Panel sidebar ───────────────────────────────────────────────────────── */
+function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
+  const ini = getInitials(name);
+  const dim = size === "sm" ? "w-8 h-8 text-xs" : "w-9 h-9 text-[11px]";
+  return (
+    <div
+      className={`${dim} rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-semibold shrink-0 select-none`}
+    >
+      {ini}
+    </div>
+  );
+}
+
+/* ── Panel sidebar ────────────────────────────────────────────────────────── */
 
 function PanelHeader({ rows }: { rows: PanelRow[] }) {
   const esc = rows.filter((r) => r.severity === "escalate" || r.severity === "escalate_urgent").length;
   const mon = rows.filter((r) => r.severity === "monitor").length;
+  const ok = rows.length - esc - mon;
+
   return (
-    <div className="px-5 py-4 border-b border-border">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-display text-base font-semibold">My patients</h2>
-        <span className="text-xs text-muted-foreground">{rows.length} active</span>
+    <div className="px-4 pt-4 pb-3.5 border-b border-border shrink-0">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold">Patients</h2>
+        <span className="h-5 px-2 inline-flex items-center rounded-md bg-muted text-muted-foreground text-[11px] font-medium tabular-nums">
+          {rows.length}
+        </span>
       </div>
-      <div className="mt-2 text-xs text-muted-foreground">
-        <span className="text-risk-escalate font-semibold">{esc} escalate</span>
-        <span className="mx-2 text-border-strong">·</span>
-        <span className="text-risk-monitor font-semibold">{mon} monitor</span>
-        <span className="mx-2 text-border-strong">·</span>
-        <span>{rows.length - esc - mon} on track</span>
+      <div className="flex items-center gap-2.5 text-[11px] flex-wrap">
+        <StatusChip dot="bg-risk-escalate" label={`${esc} escalate`} color="text-risk-escalate" />
+        <span className="text-border-strong">·</span>
+        <StatusChip dot="bg-risk-monitor" label={`${mon} monitor`} color="text-risk-monitor" />
+        <span className="text-border-strong">·</span>
+        <StatusChip dot="bg-risk-ok" label={`${ok} on track`} color="text-muted-foreground" />
       </div>
     </div>
+  );
+}
+
+function StatusChip({
+  dot,
+  label,
+  color,
+}: {
+  dot: string;
+  label: string;
+  color: string;
+}) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 font-medium ${color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+      {label}
+    </span>
   );
 }
 
@@ -361,26 +411,31 @@ function PatientRow({
   active: boolean;
   onSelect: () => void;
 }) {
-  const sev = row.severity === "escalate_urgent" ? "escalate" : row.severity;
+  const sev: DisplayRisk = row.severity === "escalate_urgent" ? "escalate" : (row.severity as DisplayRisk);
+  const dotColor =
+    sev === "escalate" ? "bg-risk-escalate" : sev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
+
   return (
     <li>
       <button
         onClick={onSelect}
-        className={`w-full text-left px-5 py-4 transition-colors ${
-          active ? "bg-accent/40" : "hover:bg-muted"
+        className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors border-l-2 ${
+          active
+            ? "border-l-primary bg-accent/20"
+            : "border-l-transparent hover:bg-muted/50"
         }`}
       >
-        <div className="flex items-start gap-3">
-          <RiskDot risk={sev} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium text-sm truncate">{row.patient_name}</span>
-              <RiskBadge risk={sev} small />
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5 truncate">{row.headline}</div>
-            <div className="text-[11px] text-muted-foreground mt-1.5">
-              Last check-in {fmtTime(row.last_check_in)}
-            </div>
+        <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-0.5">
+            <span className="text-sm font-medium truncate">{row.patient_name}</span>
+            <RiskBadge risk={sev} small />
+          </div>
+          <div className="text-xs text-muted-foreground truncate leading-relaxed">
+            {row.headline}
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-1.5 tabular-nums">
+            {fmtTime(row.last_check_in)}
           </div>
         </div>
       </button>
@@ -389,16 +444,6 @@ function PatientRow({
 }
 
 type DisplayRisk = "ok" | "monitor" | "escalate";
-
-function RiskDot({ risk }: { risk: DisplayRisk }) {
-  const cls =
-    risk === "escalate"
-      ? "bg-risk-escalate"
-      : risk === "monitor"
-        ? "bg-risk-monitor"
-        : "bg-risk-ok";
-  return <span className={`mt-1.5 inline-block w-2 h-2 rounded-full ${cls}`} />;
-}
 
 function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean }) {
   const map: Record<DisplayRisk, { label: string; bg: string; fg: string }> = {
@@ -409,17 +454,19 @@ function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean
   const c = map[risk];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 ${c.bg} ${c.fg} font-semibold uppercase tracking-wider rounded-md ${
-        small ? "text-[10px] px-1.5 py-0.5" : "text-[11px] px-2 py-1"
+      className={`inline-flex items-center gap-1 ${c.bg} ${c.fg} font-semibold rounded-md shrink-0 ${
+        small ? "text-[10px] px-1.5 py-0.5" : "text-[11px] px-2 py-0.5"
       }`}
     >
-      {risk === "escalate" && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
+      {risk === "escalate" && (
+        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shrink-0" />
+      )}
       {c.label}
     </span>
   );
 }
 
-/* ── Patient detail ──────────────────────────────────────────────────────── */
+/* ── Patient detail ───────────────────────────────────────────────────────── */
 
 function PatientDetail({ detail }: { detail: PatientDetail }) {
   async function runAction(action: "message" | "book" | "flag" | "note", content: string) {
@@ -458,102 +505,106 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
   const starters = detail.visit_summary?.conversation_starters ?? [];
   const briefing = detail.visit_summary?.clinician_facing ?? "";
   const metrics = detail.visit_summary?.key_metrics ?? {};
+  const hasMetrics = metrics.check_ins || metrics.avg_bp || metrics.peak_bp || metrics.headache_days;
 
   return (
-    <div className="max-w-[1100px] mx-auto px-8 py-8">
-      <div className="flex items-start justify-between gap-6 flex-wrap">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">
-              {detail.patient_name}
-            </h1>
-            <RiskBadge risk={sev} />
-          </div>
-          {detail.current_risk && (
-            <div className="mt-1 text-xs text-muted-foreground">
-              Risk updated {fmtTime(detail.current_risk.timestamp)}
+    <div>
+      {/* ── Page header ── */}
+      <div className="sticky top-0 z-10 bg-surface border-b border-border">
+        <div className="px-6 py-4 flex items-center justify-between gap-6">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar name={detail.patient_name} />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-base font-semibold truncate">{detail.patient_name}</h1>
+                <RiskBadge risk={sev} />
+              </div>
+              {detail.current_risk && (
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Risk assessed {fmtTime(detail.current_risk.timestamp)}
+                </p>
+              )}
             </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Btn onClick={onMessage}>Message</Btn>
+            <Btn onClick={onBook}>Book sooner</Btn>
+            <Btn onClick={() => runAction("flag", "Flagged for nurse review")}>Flag for nurse</Btn>
+            <Btn variant="primary" onClick={onNote}>Add note</Btn>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ActionBtn onClick={onMessage}>Message patient</ActionBtn>
-          <ActionBtn onClick={onBook}>Book sooner</ActionBtn>
-          <ActionBtn onClick={() => runAction("flag", "Flagged for nurse review")}>
-            Flag for nurse
-          </ActionBtn>
-          <ActionBtn primary onClick={onNote}>Add note</ActionBtn>
-        </div>
+
+        {/* Key metrics strip */}
+        {hasMetrics && (
+          <div className="px-6 pb-4 flex items-center gap-7 border-t border-border pt-3.5">
+            {metrics.check_ins && <KeyMetric label="Check-ins" value={metrics.check_ins} />}
+            {metrics.avg_bp && <KeyMetric label="Avg BP" value={metrics.avg_bp} />}
+            {metrics.peak_bp && <KeyMetric label="Peak BP" value={metrics.peak_bp} />}
+            {metrics.headache_days && (
+              <KeyMetric label="Headache days" value={metrics.headache_days} />
+            )}
+          </div>
+        )}
       </div>
 
+      {/* ── Content ── */}
       {detail.timeline.length === 0 && !detail.visit_summary ? (
-        <div className="mt-10 rounded-xl border border-dashed border-border-strong bg-surface px-6 py-12 text-center text-sm text-muted-foreground">
+        <div className="m-6 rounded-lg border border-dashed border-border-strong bg-surface px-6 py-10 text-center text-sm text-muted-foreground">
           No check-in data yet for {detail.patient_name}.
         </div>
       ) : (
-        <>
-          {/* Risk + briefing */}
-          <section className="mt-8 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
-            <Card className="p-6">
+        <div className="px-6 py-5 space-y-4">
+          {/* Row 1: Briefing + Risk */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_296px] gap-4">
+            <Card className="p-5">
               <SectionLabel>Pre-visit briefing</SectionLabel>
-              <p className="mt-3 text-[15px] leading-relaxed text-foreground">
+              <p className="text-sm leading-relaxed">
                 {briefing || "No briefing available yet."}
               </p>
-              {Object.keys(metrics).length > 0 && (
-                <div className="mt-5 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                  {metrics.check_ins && <Stat label="Check-ins" value={metrics.check_ins} />}
-                  {metrics.avg_bp && (
-                    <>
-                      <Divider />
-                      <Stat label="Avg BP" value={metrics.avg_bp} />
-                    </>
-                  )}
-                  {metrics.peak_bp && (
-                    <>
-                      <Divider />
-                      <Stat label="Peak BP" value={metrics.peak_bp} />
-                    </>
-                  )}
-                  {metrics.headache_days && (
-                    <>
-                      <Divider />
-                      <Stat label="Headache days" value={metrics.headache_days} />
-                    </>
-                  )}
+            </Card>
+
+            <Card className="p-5">
+              <SectionLabel>Risk assessment</SectionLabel>
+              <RiskBadge risk={sev} />
+              <RiskMeter score={score} />
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                {detail.current_risk?.rationale ?? "No risk rationale available."}
+              </p>
+              {detail.current_risk?.recommended_action && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  <SectionLabel>Recommended action</SectionLabel>
+                  <p className="text-xs leading-relaxed">{detail.current_risk.recommended_action}</p>
                 </div>
               )}
             </Card>
-            <Card className="p-6">
-              <SectionLabel>Risk assessment</SectionLabel>
-              <div className="mt-3">
-                <RiskBadge risk={sev} />
-              </div>
-              <RiskMeter score={score} />
-              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                {detail.current_risk?.rationale ?? "No risk rationale available."}
-              </p>
-            </Card>
-          </section>
+          </div>
 
-          {/* Patterns + BP chart */}
-          <section className="mt-5 grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-5">
-            <Card className="p-6">
+          {/* Row 2: Patterns + BP */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card className="p-5">
               <SectionLabel>Pattern detection</SectionLabel>
               {detail.patterns.length === 0 ? (
-                <p className="mt-4 text-sm text-muted-foreground">No patterns detected.</p>
+                <p className="text-sm text-muted-foreground">No patterns detected.</p>
               ) : (
-                <ul className="mt-4 space-y-3">
+                <ul className="space-y-2">
                   {detail.patterns.map((p) => {
                     const psev: DisplayRisk =
                       p.severity === "escalate_urgent" ? "escalate" : (p.severity as DisplayRisk);
+                    const dotColor =
+                      psev === "escalate"
+                        ? "bg-risk-escalate"
+                        : psev === "monitor"
+                          ? "bg-risk-monitor"
+                          : "bg-risk-ok";
                     return (
                       <li
                         key={p.title}
-                        className="flex items-start gap-3 p-3 rounded-lg bg-surface-elevated border border-border"
+                        className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/30"
                       >
-                        <RiskDot risk={psev} />
-                        <div className="flex-1">
+                        <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                        <div>
                           <div className="text-sm font-medium">{p.title}</div>
-                          <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                          <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
                             {p.detail}
                           </div>
                         </div>
@@ -563,91 +614,93 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
                 </ul>
               )}
             </Card>
-            <Card className="p-6">
+
+            <Card className="p-5">
               <SectionLabel>Blood pressure · {bp.length} readings</SectionLabel>
               {bp.length > 0 ? (
                 <>
                   <BPChart data={bp} />
-                  <div className="mt-3 flex items-center gap-4 text-[11px] text-muted-foreground">
-                    <Legend color="bg-primary" label="Systolic" />
-                    <Legend color="bg-accent-foreground" label="Diastolic" />
-                    <Legend color="bg-risk-escalate" label="140/90 threshold" dashed />
+                  <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
+                    <ChartLegend color="bg-primary" label="Systolic" />
+                    <ChartLegend color="bg-accent-foreground" label="Diastolic" />
+                    <ChartLegend label="140/90 threshold" dashed />
                   </div>
                 </>
               ) : (
-                <p className="mt-4 text-sm text-muted-foreground">No BP readings logged.</p>
+                <p className="text-sm text-muted-foreground">No BP readings logged.</p>
               )}
             </Card>
-          </section>
+          </div>
 
-          {/* Conversation starters + timeline */}
-          <section className="mt-5 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5">
-            <Card className="p-6">
+          {/* Row 3: Conversation starters + Timeline */}
+          <div className="grid grid-cols-1 lg:grid-cols-[296px_1fr] gap-4">
+            <Card className="p-5">
               <SectionLabel>Conversation starters</SectionLabel>
               {starters.length === 0 ? (
-                <p className="mt-4 text-sm text-muted-foreground">None generated yet.</p>
+                <p className="text-sm text-muted-foreground">None generated yet.</p>
               ) : (
-                <ol className="mt-4 space-y-3">
+                <ol className="space-y-3">
                   {starters.map((s, i) => (
-                    <li key={i} className="flex gap-3">
-                      <span className="shrink-0 w-6 h-6 rounded-full bg-secondary text-secondary-foreground text-[11px] font-semibold flex items-center justify-center">
-                        {i + 1}
+                    <li key={i} className="flex gap-3 text-sm">
+                      <span className="shrink-0 text-[11px] font-semibold text-muted-foreground tabular-nums mt-0.5 w-4">
+                        {i + 1}.
                       </span>
-                      <span className="text-sm leading-relaxed">{s}</span>
+                      <span className="leading-relaxed">{s}</span>
                     </li>
                   ))}
                 </ol>
               )}
-              <div className="mt-5 pt-4 border-t border-border text-[11px] text-muted-foreground">
-                Generated by Cadence · grounded in patient's care plan · independently evaluated
-              </div>
+              <p className="mt-4 pt-3 border-t border-border text-[11px] text-muted-foreground leading-relaxed">
+                Grounded in care plan · independently evaluated
+              </p>
             </Card>
-            <Card className="p-6">
+
+            <Card className="p-5">
               <SectionLabel>Timeline · since last visit</SectionLabel>
               {detail.timeline.length === 0 ? (
-                <p className="mt-4 text-sm text-muted-foreground">No check-ins yet.</p>
+                <p className="text-sm text-muted-foreground">No check-ins yet.</p>
               ) : (
-                <ol className="mt-4 relative">
-                  <span className="absolute left-[7px] top-1 bottom-1 w-px bg-border" />
+                <div className="divide-y divide-border">
                   {[...detail.timeline].reverse().map((e, i) => {
                     const flagged = (e.bp_systolic ?? 0) >= 140;
-                    const summary = e.raw_text ?? `BP ${e.bp_systolic ?? "—"}/${e.bp_diastolic ?? "—"}`;
+                    const summary =
+                      e.raw_text ?? `BP ${e.bp_systolic ?? "—"}/${e.bp_diastolic ?? "—"}`;
                     return (
-                      <li key={i} className="relative pl-7 pb-5 last:pb-0">
+                      <div key={i} className="py-3 first:pt-0 last:pb-0 flex items-start gap-3">
                         <span
-                          className={`absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full border-2 border-background ${
+                          className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${
                             flagged ? "bg-risk-escalate" : "bg-border-strong"
                           }`}
                         />
-                        <div className="flex items-baseline justify-between gap-3">
-                          <div className="text-sm font-medium">{summary}</div>
-                          <div className="text-[11px] text-muted-foreground shrink-0">
-                            {fmtDate(e.timestamp)}
-                          </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm">{summary}</div>
+                          {e.notes && (
+                            <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                              {e.notes}
+                            </div>
+                          )}
                         </div>
-                        {e.notes && (
-                          <div className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                            {e.notes}
-                          </div>
-                        )}
-                      </li>
+                        <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+                          {fmtDate(e.timestamp)}
+                        </div>
+                      </div>
                     );
                   })}
-                </ol>
+                </div>
               )}
             </Card>
-          </section>
-
-          <div className="mt-6 text-[11px] text-muted-foreground text-center">
-            All entries traced in Arize · LLM-as-judge confidence on most recent escalation: 0.97
           </div>
-        </>
+
+          <p className="pb-2 text-[11px] text-muted-foreground text-center">
+            All entries traced in Arize · LLM-as-judge confidence on most recent escalation: 0.97
+          </p>
+        </div>
       )}
     </div>
   );
 }
 
-/* ── Escalations inbox ───────────────────────────────────────────────────── */
+/* ── Escalations inbox ────────────────────────────────────────────────────── */
 
 function EscalationsInbox({
   items,
@@ -658,139 +711,136 @@ function EscalationsInbox({
   onAck: (id: string) => void;
   onOpenPatient: (pid: string) => void;
 }) {
+  const unread = items.filter((e) => !e.acknowledged).length;
+  const acked = items.filter((e) => e.acknowledged).length;
+
   return (
-    <div className="max-w-[900px] mx-auto px-8 py-8">
-      <div className="flex items-baseline justify-between">
+    <div className="flex-1 flex flex-col">
+      {/* Page header — same height/style as patient detail header */}
+      <div className="bg-surface border-b border-border px-6 py-4 flex items-center justify-between shrink-0">
         <div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Escalations</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Structured clinical summaries. Real-time. Independently evaluated before they reach you.
+          <h1 className="text-base font-semibold">Escalations</h1>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Structured summaries · independently evaluated before delivery
           </p>
         </div>
-        <div className="text-xs text-muted-foreground">
-          {items.filter((e) => !e.acknowledged).length} new ·{" "}
-          {items.filter((e) => e.acknowledged).length} acknowledged
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span>
+            <span className="font-semibold text-foreground tabular-nums">{unread}</span> unread
+          </span>
+          <span className="text-border-strong">·</span>
+          <span>
+            <span className="font-semibold text-foreground tabular-nums">{acked}</span> acknowledged
+          </span>
         </div>
       </div>
-      {items.length === 0 ? (
-        <div className="mt-10 text-sm text-muted-foreground">No escalations yet.</div>
-      ) : (
-        <ul className="mt-6 space-y-4">
-          {items.map((e) => {
-            const sev: DisplayRisk =
-              e.severity === "escalate_urgent" ? "escalate" : (e.severity as DisplayRisk);
-            return (
-              <li
-                key={e.escalation_id}
-                className={`rounded-xl border bg-surface ${
-                  !e.acknowledged ? "border-risk-escalate/40" : "border-border"
-                }`}
-              >
-                <div className="p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <RiskBadge risk={!e.acknowledged ? "escalate" : "monitor"} small />
-                        <span className="text-[11px] text-muted-foreground">
-                          {fmtTime(e.timestamp)}
-                        </span>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-6 py-5">
+          {items.length === 0 ? (
+            <div className="py-16 text-center text-sm text-muted-foreground">
+              No escalations yet.
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {items.map((e) => {
+                const sev: DisplayRisk =
+                  e.severity === "escalate_urgent" ? "escalate" : (e.severity as DisplayRisk);
+                return (
+                  <li
+                    key={e.escalation_id}
+                    className={`rounded-lg border bg-surface ${
+                      !e.acknowledged ? "border-risk-escalate/30" : "border-border"
+                    }`}
+                  >
+                    <div className="p-5">
+                      {/* Card header */}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Avatar name={e.patient_name} />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold">{e.patient_name}</span>
+                              <RiskBadge risk={!e.acknowledged ? "escalate" : sev} small />
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">
+                              {fmtTime(e.timestamp)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!e.acknowledged && (
+                            <Btn onClick={() => onAck(e.escalation_id)}>Acknowledge</Btn>
+                          )}
+                          <Btn variant="primary" onClick={() => onOpenPatient(e.patient_id)}>
+                            Open patient
+                          </Btn>
+                        </div>
                       </div>
-                      <h3 className="mt-2 font-display text-xl font-semibold">{e.patient_name}</h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!e.acknowledged && (
-                        <button
-                          onClick={() => onAck(e.escalation_id)}
-                          className="px-3 py-1.5 text-sm rounded-md bg-surface border border-border hover:bg-muted font-medium"
-                        >
-                          Acknowledge
-                        </button>
+
+                      <p className="mt-4 text-sm leading-relaxed">{e.summary}</p>
+
+                      {e.triggering_readings.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {e.triggering_readings.map((v) => (
+                            <span
+                              key={v}
+                              className="px-2 py-1 text-xs rounded-md bg-secondary text-secondary-foreground font-mono"
+                            >
+                              {v}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      <button
-                        onClick={() => onOpenPatient(e.patient_id)}
-                        className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90"
-                      >
-                        Open patient
-                      </button>
+
+                      <div className="mt-4 pt-3 border-t border-border">
+                        <SectionLabel>Recommended action</SectionLabel>
+                        <p className="text-sm">{e.recommended_action}</p>
+                      </div>
                     </div>
-                  </div>
-
-                  <p className="mt-4 text-sm leading-relaxed">{e.summary}</p>
-
-                  {e.triggering_readings.length > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {e.triggering_readings.map((v) => (
-                        <span
-                          key={v}
-                          className="px-2.5 py-1 text-xs rounded-md bg-secondary text-secondary-foreground font-mono"
-                        >
-                          {v}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-4 pt-4 border-t border-border text-sm">
-                    <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">
-                      Recommended action ·{" "}
-                    </span>
-                    <span className="text-foreground">{e.recommended_action}</span>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ── Shared UI primitives ────────────────────────────────────────────────── */
+/* ── Shared primitives ────────────────────────────────────────────────────── */
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-surface border border-border rounded-xl ${className}`}>{children}</div>
+    <div className={`rounded-lg border border-border bg-surface ${className}`}>{children}</div>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2.5">
       {children}
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-[10px] uppercase tracking-wider">{label}</div>
-      <div className="text-sm font-semibold text-foreground mt-0.5">{value}</div>
-    </div>
-  );
-}
-
-function Divider() {
-  return <span className="w-px h-8 bg-border" />;
-}
-
-function ActionBtn({
+function Btn({
   children,
-  primary,
+  variant = "secondary",
   onClick,
 }: {
   children: React.ReactNode;
-  primary?: boolean;
+  variant?: "primary" | "secondary";
   onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
-        primary
-          ? "bg-primary text-primary-foreground hover:opacity-90"
-          : "bg-surface border border-border hover:bg-muted text-foreground"
+      className={`inline-flex items-center h-8 px-3 rounded-md text-sm font-medium transition-colors ${
+        variant === "primary"
+          ? "bg-primary text-primary-foreground hover:bg-primary/90"
+          : "bg-surface border border-border text-foreground hover:bg-muted"
       }`}
     >
       {children}
@@ -798,29 +848,43 @@ function ActionBtn({
   );
 }
 
+function KeyMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-none mb-1">
+        {label}
+      </div>
+      <div className="text-sm font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
 function RiskMeter({ score }: { score: number }) {
   return (
-    <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden relative">
+    <div className="mt-3 mb-1 h-1.5 rounded-full bg-muted overflow-hidden">
       <div
-        className="h-full bg-gradient-to-r from-risk-ok via-risk-monitor to-risk-escalate"
+        className="h-full rounded-full bg-gradient-to-r from-risk-ok via-risk-monitor to-risk-escalate transition-all"
         style={{ width: `${score * 100}%` }}
-      />
-      <span
-        className="absolute top-0 bottom-0 w-px bg-foreground/30"
-        style={{ left: "70%" }}
-        aria-label="escalation threshold"
       />
     </div>
   );
 }
 
-function Legend({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+function ChartLegend({
+  color,
+  label,
+  dashed,
+}: {
+  color?: string;
+  label: string;
+  dashed?: boolean;
+}) {
   return (
     <span className="inline-flex items-center gap-1.5">
       {dashed ? (
         <span className="w-3 h-px border-t border-dashed border-risk-escalate" />
       ) : (
-        <span className={`w-2.5 h-2.5 rounded-sm ${color}`} />
+        <span className={`w-2 h-2 rounded-sm ${color}`} />
       )}
       {label}
     </span>
@@ -830,8 +894,8 @@ function Legend({ color, label, dashed }: { color: string; label: string; dashed
 function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }) {
   if (!data.length) return null;
   const W = 520;
-  const H = 180;
-  const PAD = { l: 28, r: 8, t: 12, b: 22 };
+  const H = 160;
+  const PAD = { l: 28, r: 8, t: 8, b: 20 };
   const xs = (i: number) =>
     PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(1, data.length - 1);
   const yMin = 70;
@@ -844,22 +908,45 @@ function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }
   const threshold = ys(140);
 
   return (
-    <div className="mt-3 w-full overflow-x-auto">
+    <div className="mt-2 w-full overflow-x-auto">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
         {[80, 100, 120, 140].map((v) => (
           <g key={v}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={ys(v)} y2={ys(v)} stroke="oklch(0.91 0.012 300)" strokeWidth="1" />
+            <line
+              x1={PAD.l} x2={W - PAD.r}
+              y1={ys(v)} y2={ys(v)}
+              stroke="oklch(0.91 0.012 300)"
+              strokeWidth="1"
+            />
             <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.50 0.04 295)">{v}</text>
           </g>
         ))}
-        <line x1={PAD.l} x2={W - PAD.r} y1={threshold} y2={threshold} stroke="oklch(0.5 0.2 25)" strokeWidth="1" strokeDasharray="4 4" opacity="0.6" />
+        <line
+          x1={PAD.l} x2={W - PAD.r}
+          y1={threshold} y2={threshold}
+          stroke="oklch(0.5 0.2 25)"
+          strokeWidth="1"
+          strokeDasharray="4 4"
+          opacity="0.6"
+        />
         <path d={sysPath} stroke="oklch(0.52 0.20 305)" strokeWidth="2" fill="none" />
         <path d={diaPath} stroke="oklch(0.38 0.15 305)" strokeWidth="2" fill="none" opacity="0.6" />
         {data.map((d, i) => (
           <g key={i}>
-            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4 : 2.5} fill={d.sys >= 140 ? "oklch(0.5 0.2 25)" : "oklch(0.52 0.20 305)"} />
+            <circle
+              cx={xs(i)} cy={ys(d.sys)}
+              r={d.sys >= 140 ? 4 : 2.5}
+              fill={d.sys >= 140 ? "oklch(0.5 0.2 25)" : "oklch(0.52 0.20 305)"}
+            />
             <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 305)" opacity="0.7" />
-            <text x={xs(i)} y={H - 6} fontSize="9" fill="oklch(0.50 0.04 295)" textAnchor="middle">{d.day}</text>
+            <text
+              x={xs(i)} y={H - 4}
+              fontSize="9"
+              fill="oklch(0.50 0.04 295)"
+              textAnchor="middle"
+            >
+              {d.day}
+            </text>
           </g>
         ))}
       </svg>
