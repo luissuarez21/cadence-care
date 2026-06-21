@@ -1,0 +1,130 @@
+{
+  "condition": "high_risk_pregnancy_preeclampsia",
+  "display_name": "High-Risk Pregnancy — Preeclampsia Surveillance",
+  "version": "1.0.0",
+  "check_in_cadence_hours": 24,
+  "patient_tone": "warm, reassuring, plain-language, never clinical, never alarming. Cadence is a supportive companion — it collects and reports, it never diagnoses. When a reading is outside the care-plan range, it stays calm, tells the patient it has shared the reading with her OB, and reassures her that her care team will follow up.",
+
+  "daily_questions": [
+    {
+      "id": "bp_morning",
+      "field": "bp_systolic,bp_diastolic",
+      "prompt": "Good morning, Maria! Let's start the day with your blood pressure — what did your cuff read this morning? (top number over bottom number)"
+    },
+    {
+      "id": "bp_evening",
+      "field": "bp_systolic,bp_diastolic",
+      "prompt": "And your evening blood pressure reading — what are you seeing tonight?"
+    },
+    {
+      "id": "headache",
+      "field": "headache_severity",
+      "prompt": "Any headaches today? If so, how would you rate it from 1 (barely there) to 10 (the worst you've had)?"
+    },
+    {
+      "id": "swelling",
+      "field": "swelling_location",
+      "prompt": "Have you noticed any new puffiness or swelling — especially in your face or hands (not just your feet and ankles)?"
+    },
+    {
+      "id": "vision",
+      "field": "vision_changes",
+      "prompt": "How's your vision been? Any blurriness, spots, or flashing lights?"
+    },
+    {
+      "id": "fetal_movement",
+      "field": "fetal_movement",
+      "prompt": "How is baby moving today compared to a usual day — about the same, more, or less?"
+    },
+    {
+      "id": "aspirin",
+      "field": "medication_taken",
+      "prompt": "Last one — did you take your low-dose aspirin today?"
+    }
+  ],
+
+  "red_flags": [
+    {
+      "description": "Systolic BP >= 160 OR diastolic BP >= 110 on any single reading",
+      "severity": "escalate_urgent",
+      "escalation_message": "Your blood pressure reading is in the severe range from your care plan. I've sent this to Dr. Reyes right away and added it to your appointment summary. Please sit down, rest, and keep your phone nearby — your care team will reach out."
+    },
+    {
+      "description": "Systolic BP >= 140 AND/OR diastolic BP >= 90 on two readings at least 4 hours apart (or two readings the same day)",
+      "severity": "escalate",
+      "escalation_message": "Both of your readings are above the threshold from your care plan. I've flagged this for Dr. Reyes and added it to your appointment summary — she'll be in touch."
+    },
+    {
+      "description": "Severe headache (severity >= 7) AND any vision changes (blurred vision, spots, flashing lights)",
+      "severity": "escalate_urgent",
+      "escalation_message": "Thank you for telling me. A strong headache together with vision changes is something your care plan asks us to share with Dr. Reyes right away — I've done that now and added it to your summary. Please rest somewhere comfortable while your care team follows up."
+    },
+    {
+      "description": "Severe persistent headache (severity >= 7) not relieved by usual measures",
+      "severity": "escalate",
+      "escalation_message": "That sounds like a tough headache. Your care plan asks us to let Dr. Reyes know about strong headaches, so I've shared it with her and added it to your appointment summary."
+    },
+    {
+      "description": "New vision changes (blurred vision, spots, or flashing lights)",
+      "severity": "escalate",
+      "escalation_message": "Thanks for letting me know about your vision. Your care plan asks us to share any new vision changes with Dr. Reyes, so I've passed this along and noted it for your appointment."
+    },
+    {
+      "description": "New facial or hand swelling AND elevated BP (systolic >= 140 OR diastolic >= 90)",
+      "severity": "escalate",
+      "escalation_message": "Thanks for noticing that. New swelling in your face or hands along with a higher blood pressure reading is on the list your care plan asks us to share — I've sent it to Dr. Reyes and added it to your summary."
+    },
+    {
+      "description": "Decreased or absent fetal movement compared to baseline",
+      "severity": "escalate",
+      "escalation_message": "Thank you for keeping track of baby's movements. Your care plan asks us to tell Dr. Reyes whenever movement feels reduced, so I've shared this and added it to your summary — she'll follow up. In the meantime, try lying on your left side with a cold drink and counting kicks."
+    },
+    {
+      "description": "Regular contractions before 37 weeks gestation",
+      "severity": "escalate_urgent",
+      "escalation_message": "Thank you for telling me about the contractions. Because you're not yet at 37 weeks, your care plan asks us to share this with Dr. Reyes right away — I've done that and added it to your summary. Please keep your phone close while your care team reaches out."
+    },
+    {
+      "description": "Rapid weight gain (>= 5 lb / 2.3 kg in one week)",
+      "severity": "monitor",
+      "escalation_message": "Thanks for the update. A quick jump in weight can be worth mentioning, so I've noted it in your appointment summary for Dr. Reyes to review."
+    },
+    {
+      "description": "Upper abdominal or right-upper-quadrant pain",
+      "severity": "escalate",
+      "escalation_message": "Thanks for letting me know. Pain up under your ribs is something your care plan asks us to share with Dr. Reyes, so I've passed it along and added it to your summary."
+    },
+    {
+      "description": "Low-dose aspirin not taken for 2 or more consecutive days",
+      "severity": "monitor",
+      "escalation_message": "No worries — it happens. I've made a note so Dr. Reyes knows, and I'll check in with you tomorrow to help you stay on track with your aspirin."
+    }
+  ],
+
+  "coaching_topics": [
+    "Taking low-dose aspirin consistently at the same time each day",
+    "How to take an accurate home blood pressure reading (right cuff, seated, rested, arm at heart level)",
+    "Which symptoms to share with Cadence right away vs. mention at the next visit",
+    "Reducing dietary sodium and staying hydrated",
+    "Counting fetal movements and what 'normal' feels like for you"
+  ],
+
+  "clinician_view": {
+    "key_metrics": [
+      "bp_systolic",
+      "bp_diastolic",
+      "headache_severity",
+      "swelling_location",
+      "vision_changes",
+      "fetal_movement",
+      "medication_taken"
+    ],
+    "pattern_alerts": [
+      "bp_trending_up_3_days",
+      "recurring_headaches",
+      "new_facial_swelling",
+      "decreased_fetal_movement",
+      "aspirin_nonadherence"
+    ]
+  }
+}
