@@ -11,6 +11,26 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { api, CLINICIAN_ID } from "../lib/api";
+
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+
+async function registerPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) return;
+  try {
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return;
+    const existing = await reg.pushManager.getSubscription();
+    const sub = existing ?? await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: VAPID_PUBLIC_KEY,
+    });
+    await api.post("/push/subscribe", { clinician_id: CLINICIAN_ID, subscription: sub.toJSON() });
+  } catch {
+    /* non-fatal — push is a bonus, not required for the demo */
+  }
+}
 
 function NotFoundComponent() {
   return (
@@ -118,6 +138,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    registerPush();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
