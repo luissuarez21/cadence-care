@@ -7,3 +7,4 @@ anthropic
 pywebpush
 sentry-sdk
 python-dotenv
+arize-otel
