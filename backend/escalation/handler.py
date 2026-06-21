@@ -62,8 +62,9 @@ def _kickoff_judge(escalation: EscalationSummary, symptoms: list[SymptomLog]) ->
     plan = redis_client.get_plan(escalation.patient_id)
 
     def _run() -> None:
+        import asyncio
         try:
-            arize_judge.judge_escalation(escalation, symptoms, plan)
+            asyncio.run(arize_judge.judge_escalation(escalation, symptoms, plan))
         except Exception:
             return
 
