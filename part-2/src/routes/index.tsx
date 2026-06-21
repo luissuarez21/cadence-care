@@ -12,18 +12,12 @@ export const Route = createFileRoute("/")({
         content:
           "Cadence clinician dashboard — risk-ranked patient panel, between-visit timeline, pattern detection, and pre-visit briefings for high-risk pregnancy care.",
       },
-      { property: "og:title", content: "Cadence · Clinician Dashboard" },
-      {
-        property: "og:description",
-        content:
-          "A complete picture of every high-risk pregnancy, before the appointment begins.",
-      },
     ],
   }),
   component: ClinicianDashboard,
 });
 
-/* ── API contract types ───────────────────────────────────────────────────── */
+/* ── Types ────────────────────────────────────────────────────────────────── */
 
 type Severity = "ok" | "monitor" | "escalate" | "escalate_urgent";
 
@@ -118,19 +112,63 @@ function fmtTime(iso: string | null): string {
   return fmtDate(iso);
 }
 
+function getInitials(name: string): string {
+  return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+}
+
 function bpSeries(timeline: SymptomLog[]) {
   return timeline
     .filter((e) => e.bp_systolic != null && e.bp_diastolic != null)
     .map((e) => ({
-      day: new Date(e.timestamp).toLocaleDateString(undefined, { weekday: "short" }).slice(0, 3),
+      day: new Date(e.timestamp).toLocaleDateString(undefined, { weekday: "short" }).slice(0, 2),
       sys: e.bp_systolic!,
       dia: e.bp_diastolic!,
     }));
 }
 
-function getInitials(name: string): string {
-  return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+interface Analytics {
+  total: number;
+  elevated: number;
+  adherence: number | null;
+  headacheDays: number;
+  bpTrend: "up" | "down" | "stable";
+  calendar: { day: string; checked: boolean; flagged: boolean }[];
 }
+
+function computeAnalytics(timeline: SymptomLog[]): Analytics {
+  const total = timeline.length;
+  const elevated = timeline.filter((e) => (e.bp_systolic ?? 0) >= 140).length;
+  const withMed = timeline.filter((e) => e.medication_taken !== null);
+  const taken = withMed.filter((e) => e.medication_taken === true).length;
+  const adherence = withMed.length > 0 ? Math.round((taken / withMed.length) * 100) : null;
+  const headacheDays = timeline.filter((e) => (e.headache_severity ?? 0) > 0).length;
+
+  const bpVals = timeline.filter((e) => e.bp_systolic != null).map((e) => e.bp_systolic!);
+  let bpTrend: "up" | "down" | "stable" = "stable";
+  if (bpVals.length >= 4) {
+    const half = Math.floor(bpVals.length / 2);
+    const recent = bpVals.slice(-half).reduce((a, b) => a + b, 0) / half;
+    const older = bpVals.slice(0, half).reduce((a, b) => a + b, 0) / half;
+    if (recent > older + 3) bpTrend = "up";
+    else if (recent < older - 3) bpTrend = "down";
+  }
+
+  const today = new Date();
+  const calendar = [...Array(7)].map((_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (6 - i));
+    const iso = d.toISOString().slice(0, 10);
+    const checked = timeline.some((e) => e.timestamp.slice(0, 10) === iso);
+    const flagged = timeline.some((e) => e.timestamp.slice(0, 10) === iso && (e.bp_systolic ?? 0) >= 140);
+    return { day: d.toLocaleDateString(undefined, { weekday: "short" }).slice(0, 2), checked, flagged };
+  });
+
+  return { total, elevated, adherence, headacheDays, bpTrend, calendar };
+}
+
+/* pink-tinted drop shadows */
+const shadow = "0 2px 8px -2px oklch(0.53 0.22 345 / 0.14), 0 1px 3px -1px oklch(0.53 0.22 345 / 0.10)";
+const shadowMd = "0 6px 20px -4px oklch(0.53 0.22 345 / 0.20), 0 2px 6px -2px oklch(0.53 0.22 345 / 0.12)";
 
 const BASE_WS = (import.meta.env.VITE_API_URL as string | undefined)
   ?.replace(/^http/, "ws") ?? "ws://localhost:8000";
@@ -162,15 +200,12 @@ function ClinicianDashboard() {
     api.get<{ escalations: EscalationSummary[] }>("/clinician/escalations")
       .then((r) => setEscalations(r.escalations))
       .catch(console.error);
-
     const ws = new WebSocket(`${BASE_WS}/ws/escalations?clinician_id=${CLINICIAN_ID}`);
     ws.onmessage = (e) => {
       try {
         const esc: EscalationSummary = JSON.parse(e.data);
         setEscalations((prev) => [esc, ...prev]);
-      } catch {
-        /* ignore malformed frames */
-      }
+      } catch { /* ignore malformed frames */ }
     };
     return () => ws.close();
   }, []);
@@ -193,20 +228,20 @@ function ClinicianDashboard() {
 
       {view === "panel" ? (
         <div className="flex-1 grid lg:grid-cols-[300px_1fr] min-h-0">
-          {/* Sidebar */}
-          <aside className="border-r border-border bg-surface flex flex-col overflow-hidden">
+          {/* Pink sidebar */}
+          <aside className="bg-sidebar border-r border-border flex flex-col overflow-hidden">
             <PanelHeader rows={rows} />
             <div className="flex-1 overflow-y-auto">
               {panelLoading ? (
-                <div className="p-4 space-y-2">
+                <div className="p-3 space-y-2">
                   {[...Array(5)].map((_, i) => (
-                    <div key={i} className="h-[72px] rounded-md bg-muted animate-pulse" />
+                    <div key={i} className="h-[72px] rounded-xl bg-primary/10 animate-pulse" />
                   ))}
                 </div>
               ) : rows.length === 0 ? (
-                <p className="px-4 py-8 text-sm text-muted-foreground">No patients assigned.</p>
+                <p className="px-4 py-8 text-sm text-muted-foreground text-center">No patients assigned.</p>
               ) : (
-                <ul className="divide-y divide-border">
+                <ul className="p-2 space-y-1">
                   {rows.map((row) => (
                     <PatientRow
                       key={row.patient_id}
@@ -220,22 +255,16 @@ function ClinicianDashboard() {
             </div>
           </aside>
 
-          {/* Detail pane */}
+          {/* Main detail */}
           <main className="bg-background overflow-y-auto">
             {detailLoading ? (
-              <div className="p-6 space-y-4">
-                <div className="h-[88px] rounded-lg bg-muted animate-pulse" />
-                <div className="grid grid-cols-2 gap-4">
-                  {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-40 rounded-lg bg-muted animate-pulse" />
-                  ))}
-                </div>
-              </div>
+              <DetailSkeleton />
             ) : detail ? (
               <PatientDetail detail={detail} />
             ) : (
-              <div className="flex items-center justify-center h-full min-h-64 text-sm text-muted-foreground">
-                Select a patient to view details.
+              <div className="flex flex-col items-center justify-center h-full min-h-64 gap-2">
+                <div className="text-3xl">🌸</div>
+                <p className="text-sm text-muted-foreground">Select a patient to view details.</p>
               </div>
             )}
           </main>
@@ -243,52 +272,49 @@ function ClinicianDashboard() {
       ) : (
         <EscalationsInbox
           items={escalations}
-          onAck={(id) =>
-            setEscalations((es) =>
-              es.map((e) => (e.escalation_id === id ? { ...e, acknowledged: true } : e)),
-            )
-          }
-          onOpenPatient={(pid) => {
-            setSelectedId(pid);
-            setView("panel");
-          }}
+          onAck={(id) => setEscalations((es) => es.map((e) => e.escalation_id === id ? { ...e, acknowledged: true } : e))}
+          onOpenPatient={(pid) => { setSelectedId(pid); setView("panel"); }}
         />
       )}
     </div>
   );
 }
 
+function DetailSkeleton() {
+  return (
+    <div className="p-4 space-y-3">
+      <div className="h-24 rounded-xl bg-primary/8 animate-pulse" />
+      <div className="grid grid-cols-4 gap-3">
+        {[...Array(4)].map((_, i) => <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />)}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {[...Array(4)].map((_, i) => <div key={i} className="h-36 rounded-xl bg-muted animate-pulse" />)}
+      </div>
+    </div>
+  );
+}
+
 /* ── Top bar ──────────────────────────────────────────────────────────────── */
 
-function TopBar({
-  view,
-  onView,
-  newEscalations,
-}: {
-  view: View;
-  onView: (v: View) => void;
-  newEscalations: number;
+function TopBar({ view, onView, newEscalations }: {
+  view: View; onView: (v: View) => void; newEscalations: number;
 }) {
   return (
-    <header className="h-14 px-5 flex items-center gap-5 bg-surface border-b border-border shrink-0">
-      {/* Brand */}
+    <header className="h-14 px-5 flex items-center gap-5 bg-surface border-b border-border shrink-0" style={{ boxShadow: shadow }}>
       <div className="flex items-center gap-2 shrink-0">
         <CadenceMark />
-        <span className="text-sm font-semibold tracking-tight">Cadence</span>
+        <span className="font-display text-base font-semibold tracking-tight text-primary">Cadence</span>
         <span className="text-border-strong mx-0.5 select-none">·</span>
         <span className="text-xs text-muted-foreground font-medium">Clinician</span>
       </div>
 
-      {/* Nav */}
       <nav className="flex items-center gap-0.5">
-        <NavBtn active={view === "panel"} onClick={() => onView("panel")}>
-          Patients
-        </NavBtn>
+        <NavBtn active={view === "panel"} onClick={() => onView("panel")}>Patients</NavBtn>
         <NavBtn active={view === "escalations"} onClick={() => onView("escalations")}>
           <span className="flex items-center gap-1.5">
             Escalations
             {newEscalations > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-risk-escalate text-white text-[10px] font-semibold leading-none tabular-nums">
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-risk-escalate text-white text-[10px] font-bold leading-none tabular-nums">
                 {newEscalations}
               </span>
             )}
@@ -296,10 +322,9 @@ function TopBar({
         </NavBtn>
       </nav>
 
-      {/* User */}
       <div className="ml-auto flex items-center gap-3">
         <div className="text-right leading-snug">
-          <div className="text-sm font-medium">Dr. Aiyana Reyes, MD</div>
+          <div className="text-sm font-semibold">Dr. Aiyana Reyes, MD</div>
           <div className="text-[11px] text-muted-foreground">Westside Women's Health</div>
         </div>
         <Avatar name="Aiyana Reyes" size="sm" />
@@ -308,22 +333,16 @@ function TopBar({
   );
 }
 
-function NavBtn({
-  children,
-  active,
-  onClick,
-}: {
-  children: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
+function NavBtn({ children, active, onClick }: {
+  children: React.ReactNode; active: boolean; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`h-8 px-3 rounded-md text-sm font-medium transition-colors ${
+      className={`h-8 px-3.5 rounded-full text-sm font-semibold transition-all ${
         active
-          ? "bg-secondary text-secondary-foreground"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:text-foreground hover:bg-accent"
       }`}
     >
       {children}
@@ -333,12 +352,12 @@ function NavBtn({
 
 function CadenceMark() {
   return (
-    <svg width="24" height="24" viewBox="0 0 28 28" fill="none" aria-hidden>
-      <circle cx="14" cy="14" r="13" stroke="currentColor" strokeOpacity="0.15" />
+    <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
+      <circle cx="14" cy="14" r="13" fill="oklch(0.53 0.22 345 / 0.10)" stroke="oklch(0.53 0.22 345 / 0.30)" strokeWidth="1" />
       <path
         d="M4 16 L9 16 L11 11 L14 20 L17 8 L20 16 L24 16"
-        stroke="oklch(0.52 0.20 305)"
-        strokeWidth="1.75"
+        stroke="oklch(0.53 0.22 345)"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -349,11 +368,9 @@ function CadenceMark() {
 
 function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
   const ini = getInitials(name);
-  const dim = size === "sm" ? "w-8 h-8 text-xs" : "w-9 h-9 text-[11px]";
+  const cls = size === "sm" ? "w-8 h-8 text-xs" : "w-9 h-9 text-[11px]";
   return (
-    <div
-      className={`${dim} rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-semibold shrink-0 select-none`}
-    >
+    <div className={`${cls} rounded-full bg-primary/15 text-primary border-2 border-primary/25 flex items-center justify-center font-bold shrink-0 select-none font-display`}>
       {ini}
     </div>
   );
@@ -367,76 +384,55 @@ function PanelHeader({ rows }: { rows: PanelRow[] }) {
   const ok = rows.length - esc - mon;
 
   return (
-    <div className="px-4 pt-4 pb-3.5 border-b border-border shrink-0">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold">Patients</h2>
-        <span className="h-5 px-2 inline-flex items-center rounded-md bg-muted text-muted-foreground text-[11px] font-medium tabular-nums">
+    <div className="px-4 pt-4 pb-3 border-b border-border/60 shrink-0">
+      <div className="flex items-center justify-between mb-2.5">
+        <h2 className="font-display text-base font-semibold text-foreground">My Patients</h2>
+        <span className="h-5 px-2 inline-flex items-center rounded-full bg-primary/15 text-primary text-[11px] font-bold tabular-nums">
           {rows.length}
         </span>
       </div>
-      <div className="flex items-center gap-2.5 text-[11px] flex-wrap">
-        <StatusChip dot="bg-risk-escalate" label={`${esc} escalate`} color="text-risk-escalate" />
-        <span className="text-border-strong">·</span>
-        <StatusChip dot="bg-risk-monitor" label={`${mon} monitor`} color="text-risk-monitor" />
-        <span className="text-border-strong">·</span>
-        <StatusChip dot="bg-risk-ok" label={`${ok} on track`} color="text-muted-foreground" />
+      <div className="flex items-center gap-2 text-[11px] flex-wrap">
+        <PillStat color="bg-risk-escalate" label={`${esc} escalate`} textColor="text-risk-escalate" />
+        <PillStat color="bg-risk-monitor" label={`${mon} monitor`} textColor="text-risk-monitor" />
+        <PillStat color="bg-risk-ok" label={`${ok} on track`} textColor="text-risk-ok" />
       </div>
     </div>
   );
 }
 
-function StatusChip({
-  dot,
-  label,
-  color,
-}: {
-  dot: string;
-  label: string;
-  color: string;
-}) {
+function PillStat({ color, label, textColor }: { color: string; label: string; textColor: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 font-medium ${color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface/60 border border-border/50 font-semibold ${textColor}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
       {label}
     </span>
   );
 }
 
-function PatientRow({
-  row,
-  active,
-  onSelect,
-}: {
-  row: PanelRow;
-  active: boolean;
-  onSelect: () => void;
+function PatientRow({ row, active, onSelect }: {
+  row: PanelRow; active: boolean; onSelect: () => void;
 }) {
   const sev: DisplayRisk = row.severity === "escalate_urgent" ? "escalate" : (row.severity as DisplayRisk);
-  const dotColor =
-    sev === "escalate" ? "bg-risk-escalate" : sev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
 
   return (
     <li>
       <button
         onClick={onSelect}
-        className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors border-l-2 ${
+        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 transition-all ${
           active
-            ? "border-l-primary bg-accent/20"
-            : "border-l-transparent hover:bg-muted/50"
+            ? "bg-surface text-foreground"
+            : "hover:bg-surface/60"
         }`}
+        style={active ? { boxShadow: shadow } : undefined}
       >
-        <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-        <div className="flex-1 min-w-0">
+        <Avatar name={row.patient_name} size="sm" />
+        <div className="flex-1 min-w-0 pt-0.5">
           <div className="flex items-center justify-between gap-2 mb-0.5">
-            <span className="text-sm font-medium truncate">{row.patient_name}</span>
+            <span className="text-sm font-semibold truncate font-display">{row.patient_name}</span>
             <RiskBadge risk={sev} small />
           </div>
-          <div className="text-xs text-muted-foreground truncate leading-relaxed">
-            {row.headline}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-1.5 tabular-nums">
-            {fmtTime(row.last_check_in)}
-          </div>
+          <div className="text-xs text-muted-foreground truncate leading-snug">{row.headline}</div>
+          <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">{fmtTime(row.last_check_in)}</div>
         </div>
       </button>
     </li>
@@ -453,14 +449,10 @@ function RiskBadge({ risk, small = false }: { risk: DisplayRisk; small?: boolean
   };
   const c = map[risk];
   return (
-    <span
-      className={`inline-flex items-center gap-1 ${c.bg} ${c.fg} font-semibold rounded-md shrink-0 ${
-        small ? "text-[10px] px-1.5 py-0.5" : "text-[11px] px-2 py-0.5"
-      }`}
-    >
-      {risk === "escalate" && (
-        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shrink-0" />
-      )}
+    <span className={`inline-flex items-center gap-1 ${c.bg} ${c.fg} font-bold rounded-full shrink-0 ${
+      small ? "text-[10px] px-2 py-0.5" : "text-[11px] px-2.5 py-0.5"
+    }`}>
+      {risk === "escalate" && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shrink-0" />}
       {c.label}
     </span>
   );
@@ -472,9 +464,7 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
   async function runAction(action: "message" | "book" | "flag" | "note", content: string) {
     try {
       const res = await api.post<{ ok: boolean; message: string }>("/clinician/action", {
-        patient_id: detail.patient_id,
-        action,
-        content,
+        patient_id: detail.patient_id, action, content,
       });
       toast.success(res.message);
     } catch (err) {
@@ -482,18 +472,9 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
     }
   }
 
-  function onMessage() {
-    const text = window.prompt(`Message to ${detail.patient_name}`);
-    if (text) runAction("message", text);
-  }
-  function onBook() {
-    const when = window.prompt("Book follow-up for when?", "as soon as possible");
-    if (when !== null) runAction("book", when);
-  }
-  function onNote() {
-    const note = window.prompt(`Add a note for ${detail.patient_name}`);
-    if (note) runAction("note", note);
-  }
+  const onMessage = () => { const t = window.prompt(`Message to ${detail.patient_name}`); if (t) runAction("message", t); };
+  const onBook = () => { const w = window.prompt("Book follow-up for when?", "as soon as possible"); if (w !== null) runAction("book", w); };
+  const onNote = () => { const n = window.prompt(`Add a note for ${detail.patient_name}`); if (n) runAction("note", n); };
 
   const sev: DisplayRisk =
     detail.current_risk?.severity === "escalate_urgent"
@@ -505,23 +486,23 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
   const starters = detail.visit_summary?.conversation_starters ?? [];
   const briefing = detail.visit_summary?.clinician_facing ?? "";
   const metrics = detail.visit_summary?.key_metrics ?? {};
-  const hasMetrics = metrics.check_ins || metrics.avg_bp || metrics.peak_bp || metrics.headache_days;
+  const analytics = computeAnalytics(detail.timeline);
 
   return (
     <div>
-      {/* ── Page header ── */}
-      <div className="sticky top-0 z-10 bg-surface border-b border-border">
-        <div className="px-6 py-4 flex items-center justify-between gap-6">
+      {/* ── Sticky page header ── */}
+      <div className="sticky top-0 z-10 bg-surface border-b border-border" style={{ boxShadow: shadow }}>
+        <div className="px-5 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <Avatar name={detail.patient_name} />
             <div className="min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-base font-semibold truncate">{detail.patient_name}</h1>
+                <h1 className="text-lg font-display font-semibold truncate">{detail.patient_name}</h1>
                 <RiskBadge risk={sev} />
               </div>
               {detail.current_risk && (
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Risk assessed {fmtTime(detail.current_risk.timestamp)}
+                  Assessed {fmtTime(detail.current_risk.timestamp)}
                 </p>
               )}
             </div>
@@ -534,89 +515,138 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
           </div>
         </div>
 
-        {/* Key metrics strip */}
-        {hasMetrics && (
-          <div className="px-6 pb-4 flex items-center gap-7 border-t border-border pt-3.5">
-            {metrics.check_ins && <KeyMetric label="Check-ins" value={metrics.check_ins} />}
-            {metrics.avg_bp && <KeyMetric label="Avg BP" value={metrics.avg_bp} />}
-            {metrics.peak_bp && <KeyMetric label="Peak BP" value={metrics.peak_bp} />}
-            {metrics.headache_days && (
-              <KeyMetric label="Headache days" value={metrics.headache_days} />
-            )}
+        {/* Metrics strip */}
+        {(metrics.check_ins || metrics.avg_bp || metrics.peak_bp || metrics.headache_days) && (
+          <div className="px-5 pb-3 flex items-center gap-6 border-t border-border/50">
+            <div className="pt-2.5 flex items-center gap-6 flex-wrap">
+              {metrics.check_ins && <MetricChip label="Check-ins" value={metrics.check_ins} />}
+              {metrics.avg_bp && <MetricChip label="Avg BP" value={metrics.avg_bp} />}
+              {metrics.peak_bp && <MetricChip label="Peak BP" value={metrics.peak_bp} highlight />}
+              {metrics.headache_days && <MetricChip label="Headache days" value={metrics.headache_days} />}
+              <BPTrendChip trend={analytics.bpTrend} />
+            </div>
           </div>
         )}
       </div>
 
-      {/* ── Content ── */}
+      {/* ── Content grid ── */}
       {detail.timeline.length === 0 && !detail.visit_summary ? (
-        <div className="m-6 rounded-lg border border-dashed border-border-strong bg-surface px-6 py-10 text-center text-sm text-muted-foreground">
-          No check-in data yet for {detail.patient_name}.
+        <div className="m-4 rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-6 py-10 text-center">
+          <div className="text-3xl mb-2">🌸</div>
+          <p className="text-sm text-muted-foreground">No check-in data yet for {detail.patient_name}.</p>
         </div>
       ) : (
-        <div className="px-6 py-5 space-y-4">
-          {/* Row 1: Briefing + Risk */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_296px] gap-4">
-            <Card className="p-5">
-              <SectionLabel>Pre-visit briefing</SectionLabel>
-              <p className="text-sm leading-relaxed">
-                {briefing || "No briefing available yet."}
-              </p>
-            </Card>
+        <div className="p-4 space-y-3">
 
-            <Card className="p-5">
-              <SectionLabel>Risk assessment</SectionLabel>
-              <RiskBadge risk={sev} />
-              <RiskMeter score={score} />
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                {detail.current_risk?.rationale ?? "No risk rationale available."}
+          {/* ── Row 1: Recommended next steps (FIRST) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
+            {/* Recommended action — prominent gradient card */}
+            <div
+              className="rounded-2xl border border-primary/20 p-5 bg-gradient-to-br from-primary/10 via-accent/30 to-secondary/40"
+              style={{ boxShadow: shadowMd }}
+            >
+              <CardTitle>✦ Recommended next steps</CardTitle>
+              <p className="text-sm leading-relaxed font-semibold text-foreground mt-1">
+                {detail.current_risk?.recommended_action ?? "No action recorded yet."}
               </p>
-              {detail.current_risk?.recommended_action && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <SectionLabel>Recommended action</SectionLabel>
-                  <p className="text-xs leading-relaxed">{detail.current_risk.recommended_action}</p>
+              {detail.current_risk?.triggered_flags && detail.current_risk.triggered_flags.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {detail.current_risk.triggered_flags.map((f) => (
+                    <span key={f} className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold border border-primary/20">
+                      {f}
+                    </span>
+                  ))}
                 </div>
+              )}
+            </div>
+
+            {/* Conversation starters */}
+            <Card className="p-4">
+              <CardTitle>Before the visit, ask</CardTitle>
+              {starters.length === 0 ? (
+                <p className="text-sm text-muted-foreground mt-1">None yet.</p>
+              ) : (
+                <ol className="mt-2 space-y-2.5">
+                  {starters.map((s, i) => (
+                    <li key={i} className="flex gap-2.5 text-sm">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold flex items-center justify-center tabular-nums mt-0.5">
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed">{s}</span>
+                    </li>
+                  ))}
+                </ol>
               )}
             </Card>
           </div>
 
-          {/* Row 2: Patterns + BP */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="p-5">
-              <SectionLabel>Pattern detection</SectionLabel>
-              {detail.patterns.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No patterns detected.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {detail.patterns.map((p) => {
-                    const psev: DisplayRisk =
-                      p.severity === "escalate_urgent" ? "escalate" : (p.severity as DisplayRisk);
-                    const dotColor =
-                      psev === "escalate"
-                        ? "bg-risk-escalate"
-                        : psev === "monitor"
-                          ? "bg-risk-monitor"
-                          : "bg-risk-ok";
-                    return (
-                      <li
-                        key={p.title}
-                        className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/30"
-                      >
-                        <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-                        <div>
-                          <div className="text-sm font-medium">{p.title}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                            {p.detail}
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Card>
+          {/* ── Row 2: Analytics ── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <AnalyticCard
+              label="Total check-ins"
+              value={String(analytics.total)}
+              sub="this monitoring period"
+              color="text-primary"
+              bgColor="bg-primary/8"
+            />
+            <AnalyticCard
+              label="BP elevated"
+              value={String(analytics.elevated)}
+              sub={`of ${analytics.total} readings ≥140`}
+              color={analytics.elevated > 0 ? "text-risk-escalate" : "text-risk-ok"}
+              bgColor={analytics.elevated > 0 ? "bg-risk-escalate-bg" : "bg-risk-ok-bg"}
+            />
+            <AnalyticCard
+              label="Med adherence"
+              value={analytics.adherence !== null ? `${analytics.adherence}%` : "—"}
+              sub="aspirin taken"
+              color={analytics.adherence !== null && analytics.adherence >= 80 ? "text-risk-ok" : "text-risk-monitor"}
+              bgColor="bg-muted"
+              ring={analytics.adherence}
+            />
+            <AnalyticCard
+              label="Headache days"
+              value={String(analytics.headacheDays)}
+              sub="reported this period"
+              color={analytics.headacheDays >= 3 ? "text-risk-monitor" : "text-muted-foreground"}
+              bgColor="bg-muted"
+            />
+          </div>
 
-            <Card className="p-5">
-              <SectionLabel>Blood pressure · {bp.length} readings</SectionLabel>
+          {/* Activity calendar */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <CardTitle>7-day check-in activity</CardTitle>
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-primary/30 inline-block" /> Check-in</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-risk-escalate inline-block" /> Elevated BP</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted border border-border inline-block" /> No data</span>
+              </div>
+            </div>
+            <div className="mt-3 flex items-end gap-2">
+              {analytics.calendar.map((d, i) => (
+                <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
+                  <div
+                    className={`w-full rounded-md transition-all ${
+                      d.flagged
+                        ? "bg-risk-escalate h-10"
+                        : d.checked
+                          ? "bg-primary/40 h-8"
+                          : "bg-muted border border-border/60 h-6"
+                    }`}
+                  />
+                  <span className="text-[10px] text-muted-foreground font-medium">{d.day}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* ── Row 3: BP chart + Patterns ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-3">
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <CardTitle>Blood pressure · {bp.length} readings</CardTitle>
+              </div>
               {bp.length > 0 ? (
                 <>
                   <BPChart data={bp} />
@@ -627,72 +657,93 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
                   </div>
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">No BP readings logged.</p>
+                <p className="text-sm text-muted-foreground mt-2">No BP readings logged.</p>
+              )}
+            </Card>
+
+            <Card className="p-4">
+              <CardTitle>Detected patterns</CardTitle>
+              {detail.patterns.length === 0 ? (
+                <div className="mt-2 text-center py-4">
+                  <div className="text-2xl mb-1">✓</div>
+                  <p className="text-sm text-risk-ok font-semibold">No concerning patterns</p>
+                </div>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {detail.patterns.map((p) => {
+                    const psev: DisplayRisk = p.severity === "escalate_urgent" ? "escalate" : (p.severity as DisplayRisk);
+                    const dotCls = psev === "escalate" ? "bg-risk-escalate" : psev === "monitor" ? "bg-risk-monitor" : "bg-risk-ok";
+                    return (
+                      <li key={p.title} className="flex items-start gap-2.5 p-3 rounded-xl border border-border bg-muted/40">
+                        <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
+                        <div>
+                          <div className="text-sm font-semibold">{p.title}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{p.detail}</div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </Card>
           </div>
 
-          {/* Row 3: Conversation starters + Timeline */}
-          <div className="grid grid-cols-1 lg:grid-cols-[296px_1fr] gap-4">
-            <Card className="p-5">
-              <SectionLabel>Conversation starters</SectionLabel>
-              {starters.length === 0 ? (
-                <p className="text-sm text-muted-foreground">None generated yet.</p>
-              ) : (
-                <ol className="space-y-3">
-                  {starters.map((s, i) => (
-                    <li key={i} className="flex gap-3 text-sm">
-                      <span className="shrink-0 text-[11px] font-semibold text-muted-foreground tabular-nums mt-0.5 w-4">
-                        {i + 1}.
-                      </span>
-                      <span className="leading-relaxed">{s}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              <p className="mt-4 pt-3 border-t border-border text-[11px] text-muted-foreground leading-relaxed">
-                Grounded in care plan · independently evaluated
-              </p>
+          {/* ── Row 4: Pre-visit briefing + Risk ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
+            <Card className="p-4">
+              <CardTitle>Pre-visit briefing</CardTitle>
+              <p className="text-sm leading-relaxed mt-1">{briefing || "No briefing available yet."}</p>
             </Card>
 
-            <Card className="p-5">
-              <SectionLabel>Timeline · since last visit</SectionLabel>
-              {detail.timeline.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No check-ins yet.</p>
-              ) : (
-                <div className="divide-y divide-border">
-                  {[...detail.timeline].reverse().map((e, i) => {
-                    const flagged = (e.bp_systolic ?? 0) >= 140;
-                    const summary =
-                      e.raw_text ?? `BP ${e.bp_systolic ?? "—"}/${e.bp_diastolic ?? "—"}`;
-                    return (
-                      <div key={i} className="py-3 first:pt-0 last:pb-0 flex items-start gap-3">
-                        <span
-                          className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${
-                            flagged ? "bg-risk-escalate" : "bg-border-strong"
-                          }`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm">{summary}</div>
-                          {e.notes && (
-                            <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                              {e.notes}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
-                          {fmtDate(e.timestamp)}
-                        </div>
-                      </div>
-                    );
-                  })}
+            <Card className="p-4">
+              <CardTitle>Risk assessment</CardTitle>
+              <div className="mt-2 flex items-center gap-2">
+                <RiskBadge risk={sev} />
+                <span className="text-xs text-muted-foreground">overall</span>
+              </div>
+              <RiskMeter score={score} />
+              <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
+                {detail.current_risk?.rationale ?? "No rationale available."}
+              </p>
+              {analytics.adherence !== null && (
+                <div className="mt-3 pt-3 border-t border-border flex items-center gap-3">
+                  <AdherenceRing pct={analytics.adherence} />
+                  <div>
+                    <div className="text-xs font-semibold">Medication adherence</div>
+                    <div className="text-[11px] text-muted-foreground">aspirin taken {analytics.adherence}% of days</div>
+                  </div>
                 </div>
               )}
             </Card>
           </div>
 
-          <p className="pb-2 text-[11px] text-muted-foreground text-center">
-            All entries traced in Arize · LLM-as-judge confidence on most recent escalation: 0.97
+          {/* ── Row 5: Timeline ── */}
+          <Card className="p-4">
+            <CardTitle>Timeline · since last visit</CardTitle>
+            {detail.timeline.length === 0 ? (
+              <p className="text-sm text-muted-foreground mt-2">No check-ins yet.</p>
+            ) : (
+              <div className="mt-3 divide-y divide-border">
+                {[...detail.timeline].reverse().map((e, i) => {
+                  const flagged = (e.bp_systolic ?? 0) >= 140;
+                  const summary = e.raw_text ?? `BP ${e.bp_systolic ?? "—"}/${e.bp_diastolic ?? "—"}`;
+                  return (
+                    <div key={i} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
+                      <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${flagged ? "bg-risk-escalate" : "bg-border-strong"}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm">{summary}</div>
+                        {e.notes && <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{e.notes}</div>}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{fmtDate(e.timestamp)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          <p className="pb-1 text-[11px] text-muted-foreground text-center">
+            All entries traced in Arize · LLM-as-judge confidence: 0.97
           </p>
         </div>
       )}
@@ -702,11 +753,7 @@ function PatientDetail({ detail }: { detail: PatientDetail }) {
 
 /* ── Escalations inbox ────────────────────────────────────────────────────── */
 
-function EscalationsInbox({
-  items,
-  onAck,
-  onOpenPatient,
-}: {
+function EscalationsInbox({ items, onAck, onOpenPatient }: {
   items: EscalationSummary[];
   onAck: (id: string) => void;
   onOpenPatient: (pid: string) => void;
@@ -716,85 +763,71 @@ function EscalationsInbox({
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Page header — same height/style as patient detail header */}
-      <div className="bg-surface border-b border-border px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="bg-surface border-b border-border px-5 py-3.5 flex items-center justify-between shrink-0" style={{ boxShadow: shadow }}>
         <div>
-          <h1 className="text-base font-semibold">Escalations</h1>
+          <h1 className="font-display text-lg font-semibold">Escalations</h1>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Structured summaries · independently evaluated before delivery
           </p>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span>
-            <span className="font-semibold text-foreground tabular-nums">{unread}</span> unread
-          </span>
+          <span><span className="font-bold text-foreground tabular-nums">{unread}</span> unread</span>
           <span className="text-border-strong">·</span>
-          <span>
-            <span className="font-semibold text-foreground tabular-nums">{acked}</span> acknowledged
-          </span>
+          <span><span className="font-bold text-foreground tabular-nums">{acked}</span> acknowledged</span>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-5">
+        <div className="max-w-3xl mx-auto px-4 py-4">
           {items.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              No escalations yet.
+            <div className="py-16 text-center">
+              <div className="text-4xl mb-3">🌸</div>
+              <p className="text-sm text-muted-foreground">No escalations yet.</p>
             </div>
           ) : (
             <ul className="space-y-3">
               {items.map((e) => {
-                const sev: DisplayRisk =
-                  e.severity === "escalate_urgent" ? "escalate" : (e.severity as DisplayRisk);
+                const sev: DisplayRisk = e.severity === "escalate_urgent" ? "escalate" : (e.severity as DisplayRisk);
                 return (
                   <li
                     key={e.escalation_id}
-                    className={`rounded-lg border bg-surface ${
-                      !e.acknowledged ? "border-risk-escalate/30" : "border-border"
+                    className={`rounded-2xl border bg-surface ${
+                      !e.acknowledged ? "border-risk-escalate/40 bg-risk-escalate-bg/20" : "border-border"
                     }`}
+                    style={{ boxShadow: !e.acknowledged ? shadowMd : shadow }}
                   >
                     <div className="p-5">
-                      {/* Card header */}
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
                           <Avatar name={e.patient_name} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-semibold">{e.patient_name}</span>
+                              <span className="font-display text-base font-semibold">{e.patient_name}</span>
                               <RiskBadge risk={!e.acknowledged ? "escalate" : sev} small />
                             </div>
-                            <div className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">
-                              {fmtTime(e.timestamp)}
-                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">{fmtTime(e.timestamp)}</div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {!e.acknowledged && (
-                            <Btn onClick={() => onAck(e.escalation_id)}>Acknowledge</Btn>
-                          )}
-                          <Btn variant="primary" onClick={() => onOpenPatient(e.patient_id)}>
-                            Open patient
-                          </Btn>
+                          {!e.acknowledged && <Btn onClick={() => onAck(e.escalation_id)}>Acknowledge</Btn>}
+                          <Btn variant="primary" onClick={() => onOpenPatient(e.patient_id)}>Open patient</Btn>
                         </div>
                       </div>
 
-                      <p className="mt-4 text-sm leading-relaxed">{e.summary}</p>
+                      <p className="mt-3.5 text-sm leading-relaxed">{e.summary}</p>
 
                       {e.triggering_readings.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {e.triggering_readings.map((v) => (
-                            <span
-                              key={v}
-                              className="px-2 py-1 text-xs rounded-md bg-secondary text-secondary-foreground font-mono"
-                            >
+                            <span key={v} className="px-2 py-1 text-xs rounded-full bg-secondary text-secondary-foreground font-mono border border-border/50">
                               {v}
                             </span>
                           ))}
                         </div>
                       )}
 
-                      <div className="mt-4 pt-3 border-t border-border">
-                        <SectionLabel>Recommended action</SectionLabel>
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Recommended action</div>
                         <p className="text-sm">{e.recommended_action}</p>
                       </div>
                     </div>
@@ -813,55 +846,112 @@ function EscalationsInbox({
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-lg border border-border bg-surface ${className}`}>{children}</div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2.5">
+    <div className={`rounded-2xl border border-border bg-surface ${className}`} style={{ boxShadow: shadow }}>
       {children}
     </div>
   );
 }
 
-function Btn({
-  children,
-  variant = "secondary",
-  onClick,
-}: {
-  children: React.ReactNode;
-  variant?: "primary" | "secondary";
-  onClick?: () => void;
+function CardTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="font-display text-sm font-semibold text-foreground mb-0.5">{children}</div>
+  );
+}
+
+function Btn({ children, variant = "secondary", onClick }: {
+  children: React.ReactNode; variant?: "primary" | "secondary"; onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center h-8 px-3 rounded-md text-sm font-medium transition-colors ${
+      className={`inline-flex items-center h-8 px-3.5 rounded-full text-sm font-semibold transition-all ${
         variant === "primary"
           ? "bg-primary text-primary-foreground hover:bg-primary/90"
-          : "bg-surface border border-border text-foreground hover:bg-muted"
+          : "bg-surface border border-border text-foreground hover:bg-secondary"
       }`}
+      style={variant === "primary" ? { boxShadow: shadow } : undefined}
     >
       {children}
     </button>
   );
 }
 
-function KeyMetric({ label, value }: { label: string; value: string }) {
+function MetricChip({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div>
-      <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-none mb-1">
-        {label}
-      </div>
-      <div className="text-sm font-semibold tabular-nums">{value}</div>
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-none mb-1">{label}</div>
+      <div className={`font-display text-base font-semibold tabular-nums ${highlight ? "text-risk-escalate" : "text-foreground"}`}>{value}</div>
     </div>
+  );
+}
+
+function BPTrendChip({ trend }: { trend: "up" | "down" | "stable" }) {
+  const map = {
+    up: { icon: "▲", label: "BP trending up", color: "text-risk-escalate" },
+    down: { icon: "▼", label: "BP trending down", color: "text-risk-ok" },
+    stable: { icon: "→", label: "BP stable", color: "text-muted-foreground" },
+  };
+  const t = map[trend];
+  return (
+    <div>
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-none mb-1">BP Trend</div>
+      <div className={`font-display text-sm font-semibold flex items-center gap-1 ${t.color}`}>
+        <span>{t.icon}</span>
+        <span>{t.label}</span>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticCard({ label, value, sub, color, bgColor, ring }: {
+  label: string; value: string; sub: string; color: string; bgColor: string; ring?: number | null;
+}) {
+  return (
+    <div className={`rounded-2xl border border-border p-4 ${bgColor}`} style={{ boxShadow: shadow }}>
+      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{label}</div>
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <div className={`font-display text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</div>
+          <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{sub}</div>
+        </div>
+        {ring !== null && ring !== undefined && (
+          <AdherenceRing pct={ring} small />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdherenceRing({ pct, small = false }: { pct: number; small?: boolean }) {
+  const size = small ? 36 : 48;
+  const R = small ? 14 : 18;
+  const circ = 2 * Math.PI * R;
+  const dash = Math.max(0, Math.min(1, pct / 100)) * circ;
+  const color = pct >= 80 ? "oklch(0.42 0.09 155)" : pct >= 60 ? "oklch(0.50 0.13 75)" : "oklch(0.50 0.20 25)";
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="oklch(0.93 0.06 345)" strokeWidth={small ? 4 : 5} />
+      <circle
+        cx={size / 2} cy={size / 2} r={R}
+        fill="none"
+        stroke={color}
+        strokeWidth={small ? 4 : 5}
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      {!small && (
+        <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" fontSize="10" fontWeight="700" fill="oklch(0.18 0.04 340)">
+          {pct}%
+        </text>
+      )}
+    </svg>
   );
 }
 
 function RiskMeter({ score }: { score: number }) {
   return (
-    <div className="mt-3 mb-1 h-1.5 rounded-full bg-muted overflow-hidden">
+    <div className="mt-2.5 mb-0.5 h-2 rounded-full bg-muted overflow-hidden">
       <div
         className="h-full rounded-full bg-gradient-to-r from-risk-ok via-risk-monitor to-risk-escalate transition-all"
         style={{ width: `${score * 100}%` }}
@@ -870,22 +960,12 @@ function RiskMeter({ score }: { score: number }) {
   );
 }
 
-function ChartLegend({
-  color,
-  label,
-  dashed,
-}: {
-  color?: string;
-  label: string;
-  dashed?: boolean;
-}) {
+function ChartLegend({ color, label, dashed }: { color?: string; label: string; dashed?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      {dashed ? (
-        <span className="w-3 h-px border-t border-dashed border-risk-escalate" />
-      ) : (
-        <span className={`w-2 h-2 rounded-sm ${color}`} />
-      )}
+      {dashed
+        ? <span className="w-3 h-px border-t border-dashed border-risk-escalate" />
+        : <span className={`w-2 h-2 rounded-sm ${color}`} />}
       {label}
     </span>
   );
@@ -893,16 +973,13 @@ function ChartLegend({
 
 function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }) {
   if (!data.length) return null;
-  const W = 520;
-  const H = 160;
-  const PAD = { l: 28, r: 8, t: 8, b: 20 };
-  const xs = (i: number) =>
-    PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(1, data.length - 1);
-  const yMin = 70;
-  const yMax = 150;
-  const ys = (v: number) =>
-    PAD.t + (H - PAD.t - PAD.b) * (1 - (v - yMin) / (yMax - yMin));
-
+  const W = 500;
+  const H = 140;
+  const PAD = { l: 26, r: 8, t: 8, b: 20 };
+  const xs = (i: number) => PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(1, data.length - 1);
+  const yMin = 60;
+  const yMax = 160;
+  const ys = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - (v - yMin) / (yMax - yMin));
   const sysPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xs(i)},${ys(d.sys)}`).join(" ");
   const diaPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xs(i)},${ys(d.dia)}`).join(" ");
   const threshold = ys(140);
@@ -912,41 +989,18 @@ function BPChart({ data }: { data: { day: string; sys: number; dia: number }[] }
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
         {[80, 100, 120, 140].map((v) => (
           <g key={v}>
-            <line
-              x1={PAD.l} x2={W - PAD.r}
-              y1={ys(v)} y2={ys(v)}
-              stroke="oklch(0.91 0.012 300)"
-              strokeWidth="1"
-            />
-            <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.50 0.04 295)">{v}</text>
+            <line x1={PAD.l} x2={W - PAD.r} y1={ys(v)} y2={ys(v)} stroke="oklch(0.90 0.018 340)" strokeWidth="1" />
+            <text x={4} y={ys(v) + 3} fontSize="9" fill="oklch(0.52 0.06 340)">{v}</text>
           </g>
         ))}
-        <line
-          x1={PAD.l} x2={W - PAD.r}
-          y1={threshold} y2={threshold}
-          stroke="oklch(0.5 0.2 25)"
-          strokeWidth="1"
-          strokeDasharray="4 4"
-          opacity="0.6"
-        />
-        <path d={sysPath} stroke="oklch(0.52 0.20 305)" strokeWidth="2" fill="none" />
-        <path d={diaPath} stroke="oklch(0.38 0.15 305)" strokeWidth="2" fill="none" opacity="0.6" />
+        <line x1={PAD.l} x2={W - PAD.r} y1={threshold} y2={threshold} stroke="oklch(0.50 0.20 25)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
+        <path d={sysPath} stroke="oklch(0.53 0.22 345)" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={diaPath} stroke="oklch(0.38 0.15 345)" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round" strokeLinejoin="round" />
         {data.map((d, i) => (
           <g key={i}>
-            <circle
-              cx={xs(i)} cy={ys(d.sys)}
-              r={d.sys >= 140 ? 4 : 2.5}
-              fill={d.sys >= 140 ? "oklch(0.5 0.2 25)" : "oklch(0.52 0.20 305)"}
-            />
-            <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 305)" opacity="0.7" />
-            <text
-              x={xs(i)} y={H - 4}
-              fontSize="9"
-              fill="oklch(0.50 0.04 295)"
-              textAnchor="middle"
-            >
-              {d.day}
-            </text>
+            <circle cx={xs(i)} cy={ys(d.sys)} r={d.sys >= 140 ? 4.5 : 3} fill={d.sys >= 140 ? "oklch(0.50 0.20 25)" : "oklch(0.53 0.22 345)"} />
+            <circle cx={xs(i)} cy={ys(d.dia)} r="2.5" fill="oklch(0.38 0.15 345)" opacity="0.7" />
+            <text x={xs(i)} y={H - 4} fontSize="9" fill="oklch(0.52 0.06 340)" textAnchor="middle">{d.day}</text>
           </g>
         ))}
       </svg>
