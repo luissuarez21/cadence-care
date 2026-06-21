@@ -339,7 +339,7 @@ function computeInferences(timeline: SymptomLog[]): Inference[] {
     });
   }
 
-  return out.slice(0, 4);
+  return out.slice(0, 2);
 }
 
 /* ── Care plan reminders ─────────────────────────────────────────────────── */
@@ -960,7 +960,7 @@ function OverviewTab({ detail, sev, score, analytics, inferences }: {
               AI · from check-in history
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
             {inferences.map((inf, i) => (
               <div
                 key={i}
