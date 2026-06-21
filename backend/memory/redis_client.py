@@ -161,6 +161,19 @@ def append_message(patient_id: str, session_id: str, message: ChatMessage) -> Ch
     return message
 
 
+# ── Clinician → patient messages (messages:{id}) ────────────────────────────
+
+def add_message(patient_id: str, message: ChatMessage) -> ChatMessage:
+    """Append a clinician → patient message. Patient app reads these. (CAD-35)"""
+    _list_append(messages_key(patient_id), message)
+    return message
+
+
+def get_messages(patient_id: str) -> list[ChatMessage]:
+    """All clinician → patient messages, oldest-first."""
+    return _list_read(messages_key(patient_id), ChatMessage)
+
+
 # ── Symptoms (symptoms:{id}) ────────────────────────────────────────────────
 
 def log_symptom(patient_id: str, symptom: SymptomLog) -> SymptomLog:

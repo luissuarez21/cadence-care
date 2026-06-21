@@ -147,3 +147,27 @@ def test_summary_returns_404_when_no_plan():
         resp = client.get("/api/patient/summary", params={"patient_id": "unknown"})
     assert resp.status_code == 404
     assert "care plan" in resp.json()["detail"]
+
+
+# ── GET /api/patient/messages (CAD-35) ────────────────────────────────────────
+
+def test_messages_returns_clinician_messages():
+    from backend.ingestion.schema import ChatMessage
+    msgs = [
+        ChatMessage(sender="cadence", text="Hi Maria, please come in tomorrow.", timestamp=NOW),
+    ]
+    with patch("backend.routes.patient.redis_client.get_messages", return_value=msgs):
+        resp = client.get("/api/patient/messages", params={"patient_id": "maria-chen"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["patient_id"] == "maria-chen"
+    assert len(data["messages"]) == 1
+    assert data["messages"][0]["sender"] == "cadence"
+    assert "tomorrow" in data["messages"][0]["text"]
+
+
+def test_messages_empty_when_none():
+    with patch("backend.routes.patient.redis_client.get_messages", return_value=[]):
+        resp = client.get("/api/patient/messages", params={"patient_id": "new-patient"})
+    assert resp.status_code == 200
+    assert resp.json()["messages"] == []
