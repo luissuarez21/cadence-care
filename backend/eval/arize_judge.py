@@ -268,6 +268,10 @@ async def judge_escalation(
         patient_token=patient_token(escalation.patient_id),
     )
 
+    # Attach the verdict as an Arize EVALUATION on the span, not just a custom
+    # attribute. Arize/OpenInference render `eval.<name>.label` + `.score` (+
+    # optional `.explanation`) as a first-class evaluation/feedback row — this is
+    # the literal "show us your evaluator and feedback" the booth judges asked for.
     with agent_span(
         "llm_as_judge.escalation",
         tracer=tracer,
@@ -275,6 +279,11 @@ async def judge_escalation(
         severity=escalation.severity,
         escalation_appropriate=result.appropriate,
         judge_confidence=result.confidence,
+        **{
+            "eval.escalation_appropriate.label": "appropriate" if result.appropriate else "inappropriate",
+            "eval.escalation_appropriate.score": 1.0 if result.appropriate else 0.0,
+            "eval.escalation_appropriate.explanation": result.rationale,
+        },
     ):
         pass
 
