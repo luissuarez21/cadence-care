@@ -46,17 +46,21 @@
 :root {
   --radius: 1rem;
 
-  --sand-50: #FDFCF8;
-  --sand-100: #F7F3EA;
-  --sand-200: #EFE8D8;
-  --bloom-400: #F1B5A2;
-  --bloom-500: #E89B86;
-  --bloom-600: #D17D66;
-  --leaf-600: #6E8169;
-  --leaf-700: #5D6D5A;
-  --leaf-800: #4A5748;
-  --ink: #32302F;
-  --ink-muted: #6B6664;
+  /* Cool lavender-tinted neutrals (was warm sand) */
+  --sand-50: #FBFAFE;
+  --sand-100: #F3EFFA;
+  --sand-200: #E6DEF3;
+  /* Brand violet, derived from the app icon (#CD9BDC), tuned darker
+     for accessible white-on-violet contrast */
+  --bloom-400: #C7A4EC;
+  --bloom-500: #9D6FE0;
+  --bloom-600: #7B49C2;
+  /* Cool plum neutrals (was leaf green) — harmonize with the violet */
+  --leaf-600: #6E608C;
+  --leaf-700: #574A73;
+  --leaf-800: #423859;
+  --ink: #2A2435;
+  --ink-muted: #6B6478;
 
   --background: var(--sand-50);
   --foreground: var(--ink);
