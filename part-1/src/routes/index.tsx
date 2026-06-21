@@ -256,7 +256,7 @@ function TodayPage() {
 
 // ───────────────────────── Daily check-in panel ─────────────────────────
 
-const SYMPTOMS = ["Headache", "Vision changes", "Swelling", "Belly pain", "Short of breath"];
+const SYMPTOMS = ["Headache", "Vision changes", "Swelling", "Upper belly pain", "Short of breath"];
 
 function DailyCheckin({
   checkin,
