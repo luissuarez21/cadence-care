@@ -1,8 +1,11 @@
 [build]
 builder = "NIXPACKS"
+rootDirectory = "backend"
 
 [deploy]
-startCommand = "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+# CWD is backend/ at runtime; PYTHONPATH=.. adds repo root so
+# "backend" is a resolvable package and relative imports work.
+startCommand = "PYTHONPATH=.. uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
