@@ -17,14 +17,16 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..agent import tools
 from ..auth import Identity, require_clinician
+
 from ..ingestion.api_models import (
     ActionRequest,
     ActionResponse,
     EscalationsResponse,
+    GenericOk,
     PanelResponse,
     PanelRow,
     PatientDetailResponse,
@@ -131,6 +133,19 @@ async def escalations(ident: Identity = Depends(require_clinician)) -> Escalatio
     return EscalationsResponse(escalations=all_escalations)
 
 
+# ── CAD-47: acknowledge escalation ──────────────────────────────────────────
+
+@router.post("/escalations/{escalation_id}/ack", response_model=GenericOk)
+async def ack_escalation(
+    escalation_id: str,
+    ident: Identity = Depends(require_clinician),
+) -> GenericOk:
+    for pid in _assigned_patient_ids(ident):
+        if redis_client.acknowledge_escalation(pid, escalation_id):
+            return GenericOk(ok=True)
+    raise HTTPException(status_code=404, detail=f"Escalation {escalation_id} not found.")
+
+
 # ── Clinician one-click actions ──────────────────────────────────────────────
 
 @router.post("/action", response_model=ActionResponse)
@@ -143,13 +158,19 @@ async def action(
     now = datetime.now(timezone.utc)
     if req.action == "message":
         # Clinician → patient secure message (messages:{id}); patient app reads it.
-        redis_client.get_client().rpush(
-            redis_client.messages_key(req.patient_id),
-            ChatMessage(sender="cadence", text=req.content, timestamp=now).model_dump_json(),
+        redis_client.add_message(
+            req.patient_id,
+            ChatMessage(sender="cadence", text=req.content, timestamp=now),
         )
         return ActionResponse(ok=True, message="Message sent to patient.")
 
-    # note / flag / book → recorded to notes:{id}. (book→schedule_followup is its own story.)
+    if req.action == "book":
+        # Book sooner → adjust the patient's next appointment / check-in (CAD-34).
+        when = req.content or "as soon as possible"
+        tools.schedule_followup(req.patient_id, when)
+        return ActionResponse(ok=True, message=f"Follow-up booked: {when}.")
+
+    # flag / note → recorded to notes:{id}.
     note = f"[{req.action}] {req.content}".strip()
     redis_client.get_client().rpush(redis_client.notes_key(req.patient_id), note)
     return ActionResponse(ok=True, message=f"Recorded '{req.action}' for {req.patient_id}.")

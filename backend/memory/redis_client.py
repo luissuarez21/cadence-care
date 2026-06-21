@@ -74,6 +74,10 @@ def notes_key(patient_id: str) -> str:
     return f"notes:{patient_id}"
 
 
+def followup_key(patient_id: str) -> str:
+    return f"followup:{patient_id}"
+
+
 def push_subscriptions_key(clinician_id: str) -> str:
     return f"push_subscriptions:{clinician_id}"
 
@@ -121,6 +125,29 @@ def get_plan(patient_id: str) -> Optional[ProtocolJSON]:
     return ProtocolJSON.model_validate_json(raw) if raw else None
 
 
+# ── Follow-up / appointment (followup:{id}) ─────────────────────────────────
+
+def set_followup(patient_id: str, when: str) -> dict:
+    """
+    Record the next appointment / check-in the clinician booked for this patient.
+    Stored as a small JSON blob (no schema model — this is an Adit-owned operational
+    key, not part of the frozen data contract). Returns what was stored.
+    """
+    from datetime import datetime, timezone
+    import json
+
+    record = {"when": when, "scheduled_at": datetime.now(timezone.utc).isoformat()}
+    get_client().set(followup_key(patient_id), json.dumps(record))
+    return record
+
+
+def get_followup(patient_id: str) -> Optional[dict]:
+    import json
+
+    raw = get_client().get(followup_key(patient_id))
+    return json.loads(raw) if raw else None
+
+
 # ── Session / chat (session:{id}:{session_id}) ──────────────────────────────
 
 def get_session(patient_id: str, session_id: str) -> list[ChatMessage]:
@@ -132,6 +159,19 @@ def append_message(patient_id: str, session_id: str, message: ChatMessage) -> Ch
     """Append one chat turn to the session thread."""
     _list_append(session_key(patient_id, session_id), message)
     return message
+
+
+# ── Clinician → patient messages (messages:{id}) ────────────────────────────
+
+def add_message(patient_id: str, message: ChatMessage) -> ChatMessage:
+    """Append a clinician → patient message. Patient app reads these. (CAD-35)"""
+    _list_append(messages_key(patient_id), message)
+    return message
+
+
+def get_messages(patient_id: str) -> list[ChatMessage]:
+    """All clinician → patient messages, oldest-first."""
+    return _list_read(messages_key(patient_id), ChatMessage)
 
 
 # ── Symptoms (symptoms:{id}) ────────────────────────────────────────────────
@@ -171,6 +211,19 @@ def write_escalation(patient_id: str, escalation: EscalationSummary) -> Escalati
 def get_escalations(patient_id: str) -> list[EscalationSummary]:
     """All escalations for a patient, oldest-first (callers reverse for newest-first)."""
     return _list_read(escalations_key(patient_id), EscalationSummary)
+
+
+def acknowledge_escalation(patient_id: str, escalation_id: str) -> bool:
+    """Set acknowledged=True on a specific escalation. Returns True if found."""
+    key = escalations_key(patient_id)
+    raw_list = get_client().lrange(key, 0, -1)
+    for i, raw in enumerate(raw_list):
+        esc = EscalationSummary.model_validate_json(raw)
+        if esc.escalation_id == escalation_id:
+            esc.acknowledged = True
+            get_client().lset(key, i, esc.model_dump_json())
+            return True
+    return False
 
 
 # ── Push subscriptions (push_subscriptions:{clinician_id}) ──────────────────

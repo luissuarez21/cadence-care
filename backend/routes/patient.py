@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..agent.tools import generate_visit_summary
-from ..ingestion.api_models import HistoryResponse, SummaryResponse, WatchForResponse
+from ..ingestion.api_models import (
+    HistoryResponse,
+    MessagesResponse,
+    SummaryResponse,
+    WatchForResponse,
+)
 from ..memory import redis_client
 
 router = APIRouter(prefix="/api/patient", tags=["patient"])
@@ -37,3 +42,9 @@ async def get_summary(patient_id: str) -> SummaryResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return SummaryResponse(patient_id=patient_id, visit_summary=visit_summary)
+
+
+@router.get("/messages", response_model=MessagesResponse)
+async def get_messages(patient_id: str) -> MessagesResponse:
+    """Messages the clinician sent to this patient (CAD-35). Empty list if none."""
+    return MessagesResponse(patient_id=patient_id, messages=redis_client.get_messages(patient_id))

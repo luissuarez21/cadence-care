@@ -28,8 +28,11 @@ const GREETING: Msg = {
   text: "Good morning, Maria. How are you feeling today? When you're ready, share your blood pressure reading.",
 };
 
+type CareMessage = { text: string; timestamp: string };
+
 function TodayPage() {
   const [messages, setMessages] = useState<Msg[]>([GREETING]);
+  const [careMessages, setCareMessages] = useState<CareMessage[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [sending, setSending] = useState(false);
@@ -55,6 +58,15 @@ function TodayPage() {
       .catch(() => {
         // Network error — keep the default greeting, don't alert
       });
+
+    // Messages the care team sent to the patient (CAD-35)
+    api
+      .get<{ patient_id: string; messages: Array<{ text: string; timestamp: string }> }>("/patient/messages")
+      .then((res) => setCareMessages(res.messages))
+      .catch(() => {
+        // Non-fatal — banner just won't show
+      });
+
     inputRef.current?.focus();
   }, []);
 
@@ -114,6 +126,26 @@ function TodayPage() {
           Nine check-ins this week. No red flags so far — you're doing beautifully.
         </p>
       </section>
+
+      {/* Messages from the care team (CAD-35) */}
+      {careMessages.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {careMessages.map((m, i) => (
+            <div
+              key={i}
+              className="px-4 py-3 rounded-2xl bg-bloom-500/8 border border-bloom-500/20 flex items-start gap-3"
+            >
+              <div className="size-7 rounded-full bg-bloom-500/15 grid place-items-center shrink-0 mt-0.5">
+                <Heart className="size-3.5 text-bloom-500 fill-bloom-500" />
+              </div>
+              <div className="text-[13px] leading-snug">
+                <p className="font-semibold text-leaf-800">Message from Dr. Reyes</p>
+                <p className="text-ink-muted">{m.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Chat thread */}
       <div ref={scrollRef} className="space-y-4 mb-4 max-h-[44vh] overflow-y-auto pr-1">

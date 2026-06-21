@@ -16,6 +16,7 @@
 | GET | `/api/patient/history` | patient | `?patient_id` | `HistoryResponse` | Adit |
 | GET | `/api/patient/watchfor` | patient | `?patient_id` | `WatchForResponse` | Adit |
 | GET | `/api/patient/summary` | patient | `?patient_id` | `SummaryResponse` | Adit |
+| GET | `/api/patient/messages` | patient | `?patient_id` | `MessagesResponse` | Adit |
 | GET | `/api/clinician/panel` | clinician | — | `PanelResponse` | Adit |
 | GET | `/api/clinician/patient/{id}` | clinician | path id | `PatientDetailResponse` | Adit |
 | GET | `/api/clinician/escalations` | clinician | — | `EscalationsResponse` | Adit |

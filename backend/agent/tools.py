@@ -83,9 +83,13 @@ def generate_visit_summary(patient_id: str) -> VisitSummary:
 
 
 def schedule_followup(patient_id: str, when: str) -> bool:
-    """Adjust next check-in / appointment. Called by clinician 'book sooner'. (Adit)"""
-    # Implemented with the clinician action loop (CAD-?). Recoverable stub for now.
-    raise NotImplementedError
+    """
+    Adjust the patient's next check-in / appointment. Called by the clinician
+    'Book sooner' action and available to the agent when the care team directs it.
+    Persists to followup:{patient_id}. Returns True on success. (Adit — CAD-34)
+    """
+    redis_client.set_followup(patient_id, when or "as soon as possible")
+    return True
 
 
 # Registry the orchestrator dispatches against. Adit wires Claude tool-use to this.
