@@ -38,7 +38,7 @@ SPB = {
     'Arize':     '#6D28D9',
     'Sentry':    '#C2410C',
     'Deepgram':  '#065F46',
-    'Poke':      '#9D174D',
+    'Internal Msg': '#9D174D',
     'Web Push':  '#0369A1',
 }
 
@@ -263,84 +263,120 @@ def diagram_patient_flow():
 def diagram_clinician_dashboard():
     fig, ax = setup_ax((15, 9.5))
 
-    ax.text(7.5, 9.1, 'Diagram 2 — Clinician Dashboard',
+    # ── Title ─────────────────────────────────────────────────────────────────
+    ax.text(7.5, 9.15, 'Diagram 2 — Clinician Dashboard',
             ha='center', fontsize=14, fontweight='bold', color=DARK)
-    ax.text(7.5, 8.75, 'What the OB sees, what powers each view, and how actions loop back to the patient',
+    ax.text(7.5, 8.82, 'OB journey: notification arrives → reads patient context → takes action',
             ha='center', fontsize=8.5, color=MUTED)
 
-    # ── Left column: UI panels ─────────────────────────────────────────────────
-    section_bg(ax, 0.3, 0.5, 6.4, 8.1, UI, '  Dashboard UI  (Clinician Frontend)')
+    # ── Column headers ─────────────────────────────────────────────────────────
+    for x, lbl in [(0.3, 'WHAT THE OB SEES'), (5.7, 'API ENDPOINT'), (10.5, 'POWERED BY')]:
+        ax.text(x + (4.8 if x == 5.7 else 2.0), 8.5, lbl,
+                ha='center', fontsize=8, fontweight='bold', color=MUTED,
+                bbox=dict(boxstyle='round,pad=0.3', fc='#F1F5F9', ec=BORDER))
 
-    ui_items = [
-        (8.4, 'Patient Panel  (50 → 3)',
-               'Risk-ranked list  ·  RiskBadge: ok / monitor / escalate'),
-        (7.0, 'Patient Detail View',
-               'Full symptom timeline  ·  14-day history  ·  BP trend chart'),
-        (5.6, 'Pattern Alerts',
-               '"BP trending up 4 days"  ·  "Headaches 3 of 9 days"'),
-        (4.2, 'Visit Brief + Conversation Starters',
-               'Claude-generated pre-appointment summary  ·  questions to ask'),
-        (2.8, 'Escalation Inbox  (real-time)',
-               'Structured clinical summary  ·  WebSocket push  ·  zero-lag'),
-        (1.4, 'Action Buttons',
-               'Message patient  ·  Book sooner  ·  Flag nurse  ·  Add note'),
+    # ── Divider lines between columns ─────────────────────────────────────────
+    for xd in [5.5, 10.2]:
+        ax.plot([xd, xd], [0.5, 8.35], color=BORDER, lw=0.8, ls='--', zorder=0)
+
+    # ── Section: HOW OB ARRIVES ───────────────────────────────────────────────
+    section_bg(ax, 0.2, 7.55, 14.6, 0.75, PUSH, '  ① How the OB arrives', alpha=0.25)
+
+    R(ax, 0.35, 7.65, 4.2, 0.55,
+      'Web Push notification  (zero PHI in payload)', PUSH, fs=8.5, bold=False)
+    badge(ax, 0.4, 8.07, 'Web Push')
+
+    ax.annotate('', xy=(4.8, 7.93), xytext=(4.57, 7.93),
+                arrowprops=dict(arrowstyle='->', color=BLUE, lw=1.5))
+    ax.text(4.68, 8.03, 'tap', ha='center', fontsize=7, color=MUTED)
+
+    R(ax, 4.8, 7.65, 4.2, 0.55,
+      '"A patient needs your attention"  →  opens dashboard', PUSH, fs=8, bold=False)
+
+    ax.annotate('', xy=(9.3, 7.93), xytext=(9.0, 7.93),
+                arrowprops=dict(arrowstyle='->', color=BLUE, lw=1.5))
+
+    R(ax, 9.3, 7.65, 5.1, 0.55,
+      'Source:  escalations:{patient_id}  in Redis  (written by Product 1)', MEM, fs=8, bold=False)
+    badge(ax, 9.35, 8.07, 'Redis')
+
+    # ── Rows: UI view | endpoint | powered by ─────────────────────────────────
+    rows = [
+        # (y,  UI label,               UI subtext,                          endpoint,                          data label,                          data subtext,                    data_color, sponsor,      ai)
+        (6.4,  'Patient Panel  (50 → 3)',
+                'Risk-ranked list\nok · monitor · escalate badges',
+                'GET  /api/clinician/panel',
+                'Redis:  risk_timeline:{id}',
+                'Latest risk score per patient\nSorted highest risk first',
+                MEM, 'Redis', False),
+
+        (5.15, 'Patient Detail  +  Timeline',
+                'Every check-in chronologically\nBP readings, symptoms, flags',
+                'GET  /api/clinician/patient/{id}',
+                'Redis:  symptoms:{id}',
+                'Full time-series log\nStructured + timestamped',
+                MEM, 'Redis', False),
+
+        (3.9,  'Pattern Alerts',
+                '"BP up 4 days"  ·  "Headaches 3/9 days"\nDirectional trends the patient wouldn\'t notice',
+                'GET  /api/clinician/patient/{id}',
+                'detect_pattern()  →  Redis: symptoms:{id}',
+                'Trend logic over time-series\nSurfaces to both agent + OB',
+                API, None, False),
+
+        (2.65, 'Visit Brief  +  Conversation Starters',
+                'Claude-generated before each appointment\n"Ask about headache location. Re-check BP."',
+                'GET  /api/clinician/patient/{id}',
+                'Claude:  generate_visit_summary()',
+                'Reads symptoms + risk_timeline\nTwo variants: patient + clinician',
+                AI, 'Anthropic', True),
+
+        (1.4,  'Escalation Inbox',
+                'Structured clinical summary, real-time\n"BP 142/91 × 2. Headaches day 3, 6, 9."',
+                'GET  /api/clinician/escalations\n(WebSocket — live stream)',
+                'Redis:  escalations:{id}',
+                'Written by escalate_to_clinician()\nPushed via WebSocket on write',
+                MEM, 'Redis', False),
     ]
-    for y, title_t, sub in ui_items:
-        R(ax, 0.5, y, 6.0, 1.1, title_t, UI, subtext=sub, fs=9, subfs=7.5)
 
-    # ── Center column: Backend services ───────────────────────────────────────
-    section_bg(ax, 7.1, 0.5, 4.0, 8.1, API, '  FastAPI Backend Services')
+    ROW_H = 1.08
+    for (y, ui_t, ui_s, ep, data_t, data_s, data_c, spn, is_ai) in rows:
+        # UI box
+        R(ax, 0.35, y, 5.0, ROW_H, ui_t, UI, subtext=ui_s, fs=8.8, subfs=7.2)
+        # Endpoint label (center column)
+        ax.text(7.85, y + ROW_H/2, ep,
+                ha='center', va='center', fontsize=7.5, color=DARK,
+                fontfamily='monospace',
+                bbox=dict(boxstyle='round,pad=0.3', fc=API, ec=BORDER))
+        # Data box
+        R(ax, 10.35, y, 4.45, ROW_H, data_t, data_c, subtext=data_s, fs=8.5, subfs=7.2)
+        if spn:
+            badge(ax, 10.4, y + ROW_H - 0.22, spn)
+        if is_ai:
+            badge(ax, 12.2, y + ROW_H - 0.22, 'Arize')
 
-    svc_items = [
-        (8.1, 'GET /api/clinician/panel',    'Auth (clinician role)  →  Panel ranking by risk_timeline'),
-        (6.7, 'GET /api/clinician/patient/{id}', 'Reads: symptoms, risk_timeline, session from Redis'),
-        (5.3, 'Pattern Detection Service',   'detect_pattern()  →  trends over symptom time-series'),
-        (3.9, 'Claude: Visit Summary',       'generate_visit_summary()  ·  patient + clinician variants'),
-        (2.5, 'WebSocket: Escalation Push',  'GET /api/clinician/escalations  ·  real-time stream'),
-        (1.1, 'POST /api/clinician/action',  'Routes: message → Poke  ·  book → schedule_followup'),
+        # Arrows UI → endpoint → data
+        arr(ax, 5.35, y + ROW_H/2, 5.9, y + ROW_H/2, c=BLUE, lw=1.2)
+        arr(ax, 9.8,  y + ROW_H/2, 10.35, y + ROW_H/2, c='#B91C1C', lw=1.2)
+
+    # ── Actions section ────────────────────────────────────────────────────────
+    section_bg(ax, 0.2, 0.42, 14.6, 0.88, API, '  ② Actions  (POST /api/clinician/action)', alpha=0.2)
+
+    actions = [
+        (0.35,  'Message patient',   '→  Redis: messages:{id}\n   patient app reads on next load', MEM),
+        (3.85,  'Book sooner',       '→  schedule_followup()\n   re-enters patient agent',         AI),
+        (7.35,  'Flag for nurse',    '→  Redis: notes:{id}',                                        MEM),
+        (10.85, 'Add note',          '→  Redis: notes:{id}',                                        MEM),
     ]
-    for y, t, s in svc_items:
-        R(ax, 7.2, y, 3.8, 1.1, t, API, subtext=s, fs=8.5, subfs=7.2)
-
-    # ── Right column: Data + Sponsors ─────────────────────────────────────────
-    section_bg(ax, 11.5, 0.5, 3.2, 8.1, MEM, '  Shared Data + Sponsors')
-
-    right_items = [
-        (8.1,  'Redis\nrisk_timeline:{id}',      MEM, 'Redis'),
-        (6.7,  'Redis\nsymptoms:{id}',            MEM, 'Redis'),
-        (5.3,  'Redis\nsymptoms:{id}',            MEM, 'Redis'),
-        (3.9,  'Anthropic Claude\nclaude-sonnet-4-6', AI,  'Anthropic'),
-        (2.5,  'Redis\nescalations:{id}',         MEM, 'Redis'),
-        (1.1,  'Poke\nSecure in-app messaging',   MSG, 'Poke'),
-    ]
-    for y, t, c, spn in right_items:
-        R(ax, 11.6, y, 3.0, 1.1, t, c, fs=8.5, bold=False)
-        badge(ax, 11.65, y + 0.82, spn)
-
-    # ── Arrows: UI → Backend ──────────────────────────────────────────────────
-    for y in [8.65, 7.25, 5.85, 4.45, 3.05, 1.65]:
-        arr(ax, 6.5, y, 7.2, y, c=BLUE, lw=1.3)
-
-    # ── Arrows: Backend → Data ───────────────────────────────────────────────
-    for y in [8.65, 7.25, 5.85, 4.45, 3.05, 1.65]:
-        arr(ax, 11.0, y, 11.6, y, c='#B91C1C', lw=1.3)
-
-    # Arize badge on Visit Summary
-    badge(ax, 7.25, 4.82, 'Arize')
-    ax.text(7.25, 4.62, 'Every decision traced + LLM-as-Judge',
-            fontsize=6.5, color=MUTED)
-
-    # Web Push coming in (top of escalation inbox)
-    R(ax, 7.2, 0.52, 7.3, 0.55, 'Web Push → triggers escalation inbox notification (zero PHI)',
-      PUSH, fs=7, bold=False)
-    badge(ax, 7.25, 0.82, 'Web Push')
+    for ax_x, lbl, outcome, c in actions:
+        R(ax, ax_x, 0.5, 3.3, 0.75, lbl, UI, subtext=outcome, fs=8.5, subfs=7, bold=True)
 
     legend_row(ax, [
         (UI,   'Dashboard UI'),
-        (API,  'Backend Services'),
+        (API,  'Backend / Service'),
         (AI,   'Claude / AI'),
-        (MEM,  'Redis Memory'),
-        (MSG,  'Poke Messaging'),
+        (MEM,  'Redis'),
+        (PUSH, 'Web Push'),
         (OBS,  'Observability'),
     ])
 
@@ -404,13 +440,12 @@ def diagram_full_system():
         (5.1, 'Visit Brief  +  Starters',      'Claude-generated before each appt',    AI),
         (3.7, 'Escalation Inbox',              'Real-time WebSocket  ·  clinical summary', '#FFE4E6'),
         (2.3, 'Action Buttons',                'Message · Book sooner · Flag · Note',  UI),
-        (1.0, 'Poke  — Secure Messaging',      'Clinician → Patient  (in-app, no SMS)', MSG),
+        (1.0, 'Message Patient',               'Write Redis messages:{id} → patient app', MEM),
     ]
     for y, t, s, c in p2:
         R(ax, 10.7, y, 4.0, 1.1, t, c, subtext=s, fs=8.5, subfs=7.2)
 
     badge(ax, 10.75, 5.82, 'Anthropic')
-    badge(ax, 10.75, 1.82, 'Poke')
 
     # ── Data flow arrows ──────────────────────────────────────────────────────
     # P1 chat → Claude
@@ -440,8 +475,8 @@ def diagram_full_system():
 
     # Clinician action → loops back
     arr(ax, 10.7, 2.85, 10.1, 2.85, c=GREEN, lw=1.5, lbl='book sooner → schedule_followup')
-    arr(ax, 10.7, 1.55, 10.1, 1.55, lbl='message → Poke → patient UI', c='#9D174D', lw=1.5)
-    arr(ax, 4.9, 1.55, 4.3, 1.55, c='#9D174D', lw=1.1, rad=0.2)
+    arr(ax, 10.7, 1.55, 10.1, 1.55, lbl='message → Redis → patient app', c='#B91C1C', lw=1.5)
+    arr(ax, 4.9, 1.55, 4.3, 1.55, c='#B91C1C', lw=1.1, rad=0.2)
 
     # Observability taps (dashed, light)
     for sy in [8.45, 5.65, 4.25]:
@@ -455,7 +490,7 @@ def diagram_full_system():
     sponsors_line = (
         'Anthropic (orchestrator + vision + summaries)  ·  '
         'Redis (all shared state)  ·  Arize (tracing + eval)  ·  '
-        'Sentry (errors)  ·  Deepgram (voice)  ·  Poke (messaging)  ·  Web Push (OB alerts)'
+        'Deepgram (voice bonus)  ·  Web Push (OB escalation alerts)'
     )
     ax.text(7.5, 0.15, sponsors_line,
             ha='center', fontsize=7, color=MUTED)
