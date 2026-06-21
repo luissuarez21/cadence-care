@@ -22,7 +22,7 @@ app = FastAPI(title="Cadence API", version="0.1.0")
 # CORS for the Vite frontend (configurable via comma-separated CORS_ORIGINS).
 _origins = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:3000",
 ).split(",")
 app.add_middleware(
     CORSMiddleware,
