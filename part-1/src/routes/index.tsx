@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { Send, Heart, ArrowRight, Check } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Send, Heart, ArrowRight, Check, HeartPulse, Baby, Pill, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { PatientShell } from "@/components/PatientShell";
 import { api, PATIENT_ID } from "@/lib/api";
@@ -30,6 +30,13 @@ const GREETING: Msg = {
 
 type CareMessage = { text: string; timestamp: string };
 
+type Checkin = {
+  bpMorning?: string;
+  bpEvening?: string;
+  movement?: "normal" | "less";
+  aspirin?: boolean;
+};
+
 function TodayPage() {
   // A fresh session id per page load → conversation starts clean every reload.
   // The backend keys history off this; a new id means empty history → greeting only.
@@ -38,6 +45,7 @@ function TodayPage() {
   );
   const [messages, setMessages] = useState<Msg[]>([GREETING]);
   const [careMessages, setCareMessages] = useState<CareMessage[]>([]);
+  const [checkin, setCheckin] = useState<Checkin>({});
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [sending, setSending] = useState(false);
@@ -81,17 +89,21 @@ function TodayPage() {
 
   const flagged = messages.some((m) => m.flagged);
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || sending) return;
-
-    const userMsg: Msg = { id: Date.now(), from: "maria", text };
-    setMessages((m) => [...m, userMsg]);
-    setInput("");
+  /**
+   * Send a message to the agent. In `silent` mode (used by the daily check-in
+   * panel) the patient's text is logged without a chat bubble, and Cade only
+   * speaks back in the thread if the reading trips a red flag. Routine logging
+   * stays quiet; escalation is conversational.
+   */
+  async function sendToAgent(
+    text: string,
+    opts: { silent?: boolean } = {},
+  ): Promise<{ reply: string; flagged: boolean } | null> {
+    if (!opts.silent) {
+      setMessages((m) => [...m, { id: Date.now(), from: "maria", text }]);
+    }
     setSending(true);
     setTyping(true);
-
     try {
       const res = await api.post<{ reply: string; flagged: boolean; risk?: unknown }>("/chat/message", {
         patient_id: PATIENT_ID,
@@ -99,39 +111,43 @@ function TodayPage() {
         session_id: sessionId,
       });
       setTyping(false);
-      setMessages((m) => [
-        ...m,
-        {
-          id: Date.now() + 1,
-          from: "cadence",
-          text: res.reply,
-          flagged: res.flagged,
-        },
-      ]);
+      if (!opts.silent || res.flagged) {
+        setMessages((m) => [
+          ...m,
+          { id: Date.now() + 1, from: "cadence", text: res.reply, flagged: res.flagged },
+        ]);
+      }
+      return res;
     } catch {
       setTyping(false);
-      setInput(text);
       toast.error("Couldn't reach Cadence — please try again.");
+      return null;
     } finally {
       setSending(false);
     }
   }
 
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || sending) return;
+    setInput("");
+    const res = await sendToAgent(text);
+    if (!res) setInput(text); // restore on failure
+  }
+
+  // One check-in task logs through the agent (quiet unless it red-flags),
+  // then records the value in the panel.
+  async function logTask(message: string, patch: Checkin) {
+    if (sending) return;
+    const res = await sendToAgent(message, { silent: true });
+    if (res) setCheckin((c) => ({ ...c, ...patch }));
+  }
+
   return (
     <PatientShell>
-      {/* Day card */}
-      <section className="bg-sand-100 rounded-[28px] p-5 border border-black/[0.04] mb-6">
-        <div className="flex items-center justify-between mb-1">
-          <span className="inline-flex items-center gap-1.5 bg-white px-3 py-1 rounded-full text-[11px] font-semibold text-leaf-800 border border-leaf-700/10">
-            <Heart className="size-3 text-bloom-500 fill-bloom-500" />
-            Daily Check-in
-          </span>
-          <span className="text-ink/40 text-[11px] font-medium">Week 28 · Day 9</span>
-        </div>
-        <p className="text-[15px] text-leaf-800/90 leading-relaxed mt-3 font-serif">
-          Nine check-ins this week. No red flags so far — you're doing beautifully.
-        </p>
-      </section>
+      {/* Daily check-in — structured logging, separate from the chat */}
+      <DailyCheckin checkin={checkin} busy={sending} onLog={logTask} />
 
       {/* Messages from the care team (CAD-35) */}
       {careMessages.length > 0 && (
@@ -235,6 +251,344 @@ function TodayPage() {
         <ArrowRight className="size-4 text-ink/30" />
       </Link>
     </PatientShell>
+  );
+}
+
+// ───────────────────────── Daily check-in panel ─────────────────────────
+
+const SYMPTOMS = ["Headache", "Vision changes", "Swelling", "Belly pain", "Short of breath"];
+
+function DailyCheckin({
+  checkin,
+  busy,
+  onLog,
+}: {
+  checkin: Checkin;
+  busy: boolean;
+  onLog: (message: string, patch: Checkin) => void;
+}) {
+  const done = [
+    checkin.bpMorning,
+    checkin.bpEvening,
+    checkin.symptomsDone,
+    checkin.movement,
+    checkin.aspirin,
+  ].filter(Boolean).length;
+  const total = 5;
+  const allDone = done === total;
+
+  return (
+    <section className="bg-white rounded-3xl border border-sand-200 shadow-sm p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-[15px] font-semibold text-leaf-800 leading-tight">Today's check-in</h3>
+          <p className="text-[12px] text-ink-muted mt-0.5">
+            {allDone ? "All done — nice work." : "Day 9 · log these for Dr. Reyes"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-semibold text-bloom-600 tabular-nums">
+            {done}/{total}
+          </span>
+          <div className="h-1.5 w-14 rounded-full bg-sand-200 overflow-hidden">
+            <div
+              className="h-full bg-bloom-500 transition-all duration-300"
+              style={{ width: `${(done / total) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <BpRow
+          label="Morning blood pressure"
+          value={checkin.bpMorning}
+          busy={busy}
+          onLog={(v) => onLog(`My morning blood pressure was ${v}.`, { bpMorning: v })}
+        />
+        <BpRow
+          label="Evening blood pressure"
+          value={checkin.bpEvening}
+          busy={busy}
+          onLog={(v) => onLog(`My evening blood pressure was ${v}.`, { bpEvening: v })}
+        />
+        <SymptomRow
+          done={checkin.symptomsDone}
+          selected={checkin.symptoms}
+          busy={busy}
+          onLog={(list) =>
+            onLog(
+              list.length === 0
+                ? "No warning symptoms today — no headache, vision changes, swelling, belly pain, or shortness of breath."
+                : `Today I'm noticing: ${list.join(", ").toLowerCase()}.`,
+              { symptoms: list, symptomsDone: true },
+            )
+          }
+        />
+        <ChoiceRow
+          label="Baby's movement"
+          icon={<Baby className="size-4" />}
+          value={
+            checkin.movement
+              ? checkin.movement === "normal"
+                ? "Normal"
+                : "Less than usual"
+              : undefined
+          }
+          options={[
+            { key: "normal", label: "Normal" },
+            { key: "less", label: "Less" },
+          ]}
+          busy={busy}
+          onPick={(key) =>
+            onLog(
+              key === "normal"
+                ? "Baby has been moving normally today."
+                : "Baby is moving less than usual today.",
+              { movement: key as "normal" | "less" },
+            )
+          }
+        />
+        <ToggleRow
+          label="Low-dose aspirin"
+          icon={<Pill className="size-4" />}
+          done={checkin.aspirin}
+          actionLabel="Mark taken"
+          doneLabel="Taken"
+          busy={busy}
+          onDone={() => onLog("I took my low-dose aspirin today.", { aspirin: true })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function TaskIcon({ children, done }: { children: ReactNode; done?: boolean }) {
+  return (
+    <div
+      className={
+        "size-8 rounded-full grid place-items-center shrink-0 " +
+        (done ? "bg-bloom-500/15 text-bloom-600" : "bg-sand-200/70 text-leaf-700")
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+function DoneRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-bloom-500/[0.06]">
+      <TaskIcon done>{icon}</TaskIcon>
+      <span className="flex-1 text-[13.5px] font-medium text-ink-muted min-w-0 truncate">{label}</span>
+      <span className="text-[13px] font-semibold text-leaf-800">{value}</span>
+      <Check className="size-4 text-bloom-600 shrink-0" strokeWidth={3} />
+    </div>
+  );
+}
+
+function BpRow({
+  label,
+  value,
+  busy,
+  onLog,
+}: {
+  label: string;
+  value?: string;
+  busy: boolean;
+  onLog: (v: string) => void;
+}) {
+  const [v, setV] = useState("");
+  if (value) return <DoneRow icon={<HeartPulse className="size-4" />} label={label} value={value} />;
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-2xl bg-sand-100/70">
+      <TaskIcon>
+        <HeartPulse className="size-4" />
+      </TaskIcon>
+      <span className="flex-1 text-[13.5px] font-medium text-leaf-800 min-w-0 truncate">{label}</span>
+      <input
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        inputMode="text"
+        placeholder="120/80"
+        className="w-[68px] text-center bg-white border border-sand-200 rounded-lg px-2 py-1.5 text-[13px] outline-none focus:border-bloom-500/50"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && v.trim() && !busy) {
+            onLog(v.trim());
+            setV("");
+          }
+        }}
+      />
+      <button
+        type="button"
+        disabled={!v.trim() || busy}
+        onClick={() => {
+          onLog(v.trim());
+          setV("");
+        }}
+        className="text-[12px] font-semibold text-bloom-600 disabled:opacity-30 px-1"
+      >
+        Log
+      </button>
+    </div>
+  );
+}
+
+function ChoiceRow({
+  label,
+  icon,
+  value,
+  options,
+  busy,
+  onPick,
+}: {
+  label: string;
+  icon: ReactNode;
+  value?: string;
+  options: { key: string; label: string }[];
+  busy: boolean;
+  onPick: (key: string) => void;
+}) {
+  if (value) return <DoneRow icon={icon} label={label} value={value} />;
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-2xl bg-sand-100/70">
+      <TaskIcon>{icon}</TaskIcon>
+      <span className="flex-1 text-[13.5px] font-medium text-leaf-800 min-w-0 truncate">{label}</span>
+      <div className="flex gap-1.5">
+        {options.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            disabled={busy}
+            onClick={() => onPick(o.key)}
+            className="text-[12px] font-medium px-2.5 py-1.5 rounded-full bg-white border border-sand-200 text-leaf-800 hover:border-bloom-500/40 disabled:opacity-40 transition-colors"
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToggleRow({
+  label,
+  icon,
+  done,
+  actionLabel,
+  doneLabel,
+  busy,
+  onDone,
+}: {
+  label: string;
+  icon: ReactNode;
+  done?: boolean;
+  actionLabel: string;
+  doneLabel: string;
+  busy: boolean;
+  onDone: () => void;
+}) {
+  if (done) return <DoneRow icon={icon} label={label} value={doneLabel} />;
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-2xl bg-sand-100/70">
+      <TaskIcon>{icon}</TaskIcon>
+      <span className="flex-1 text-[13.5px] font-medium text-leaf-800 min-w-0 truncate">{label}</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onDone}
+        className="text-[12px] font-semibold px-3 py-1.5 rounded-full bg-bloom-500 text-white disabled:opacity-40 active:scale-95 transition-transform"
+      >
+        {actionLabel}
+      </button>
+    </div>
+  );
+}
+
+function SymptomRow({
+  done,
+  selected,
+  busy,
+  onLog,
+}: {
+  done?: boolean;
+  selected?: string[];
+  busy: boolean;
+  onLog: (list: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+
+  if (done) {
+    const summary = selected && selected.length > 0 ? selected.join(", ") : "None";
+    return <DoneRow icon={<AlertTriangle className="size-4" />} label="Warning symptoms" value={summary} />;
+  }
+
+  const toggle = (s: string) =>
+    setPicked((p) => (p.includes(s) ? p.filter((x) => x !== s) : [...p, s]));
+
+  return (
+    <div className="rounded-2xl bg-sand-100/70 px-3 py-2">
+      <div className="flex items-center gap-3">
+        <TaskIcon>
+          <AlertTriangle className="size-4" />
+        </TaskIcon>
+        <span className="flex-1 text-[13.5px] font-medium text-leaf-800 min-w-0 truncate">
+          Any warning symptoms?
+        </span>
+        {!open && (
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onLog([])}
+              className="text-[12px] font-medium px-2.5 py-1.5 rounded-full bg-white border border-sand-200 text-leaf-800 hover:border-bloom-500/40 disabled:opacity-40 transition-colors"
+            >
+              None
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-[12px] font-medium px-2.5 py-1.5 rounded-full bg-white border border-sand-200 text-leaf-800 hover:border-bloom-500/40 transition-colors"
+            >
+              Add
+            </button>
+          </div>
+        )}
+      </div>
+      {open && (
+        <div className="mt-2.5 pl-11">
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {SYMPTOMS.map((s) => {
+              const on = picked.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggle(s)}
+                  className={
+                    "text-[12px] font-medium px-2.5 py-1.5 rounded-full border transition-colors " +
+                    (on
+                      ? "bg-bloom-500 text-white border-bloom-500"
+                      : "bg-white text-leaf-800 border-sand-200 hover:border-bloom-500/40")
+                  }
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            disabled={busy || picked.length === 0}
+            onClick={() => onLog(picked)}
+            className="text-[12px] font-semibold text-bloom-600 disabled:opacity-30"
+          >
+            {picked.length ? `Log ${picked.length} symptom${picked.length > 1 ? "s" : ""}` : "Select symptoms"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
